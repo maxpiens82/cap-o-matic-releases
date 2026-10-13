@@ -10,7 +10,7 @@ A one-minute walkthrough, in English or Spanish: **[maxpiens82.github.io/cap-o-m
 
 [![Cap-o-matic walkthrough: captions delivered to the timeline, one word painted green](images/walkthrough.png)](https://maxpiens82.github.io/cap-o-matic-releases/)
 
-Recorrido de un minuto, en inglés o español: **[maxpiens82.github.io/cap-o-matic-releases](https://maxpiens82.github.io/cap-o-matic-releases/?lang=es)**
+Recorrido de un minuto, en inglés o español: **[maxpiens82.github.io/cap-o-matic-releases](https://maxpiens82.github.io/cap-o-matic-releases/tour/?lang=es)**
 
 ## Install
 
