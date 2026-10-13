@@ -4,6 +4,14 @@ Animated captions for DaVinci Resolve Studio, by RE!
 
 Download the latest version from **[Releases](https://github.com/maxpiens82/cap-o-matic-releases/releases/latest)**.
 
+## See how it works
+
+A one-minute walkthrough, in English or Spanish: **[maxpiens82.github.io/cap-o-matic-releases](https://maxpiens82.github.io/cap-o-matic-releases/)**
+
+[![Cap-o-matic walkthrough: captions delivered to the timeline, one word painted green](images/walkthrough.png)](https://maxpiens82.github.io/cap-o-matic-releases/)
+
+Recorrido de un minuto, en inglés o español: **[maxpiens82.github.io/cap-o-matic-releases](https://maxpiens82.github.io/cap-o-matic-releases/?lang=es)**
+
 ## Install
 
 1. Download `Cap-o-matic-<version>.lua` from the latest release.
