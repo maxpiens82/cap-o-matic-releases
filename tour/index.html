@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cap-o-matic walkthrough</title>
+<meta name="description" content="How Cap-o-matic works: animated captions for DaVinci Resolve Studio, in six short steps.">
+<link rel="icon" href="../plugin/assets/logo.png">
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="tour.css">
+</head>
+<body>
+<header class="head">
+  <div class="brand"><img src="../plugin/assets/logo.png" alt="" width="26" height="26"><span>Cap-o-matic</span></div>
+  <p class="tag" data-t="tagline"></p>
+  <div class="lang" role="group" aria-label="Language">
+    <button type="button" data-lang="en">EN</button>
+    <button type="button" data-lang="es">ES</button>
+  </div>
+</header>
+
+<main>
+  <div class="frame" id="frame">
+    <div class="stage" id="stage" aria-hidden="true">
+      <!-- A drawn DaVinci Resolve: menu bar, viewer, timeline, Console. The panel on the right is the real one. -->
+      <div class="menubar">
+        <span class="app">DaVinci Resolve</span><span>File</span><span>Edit</span><span>Timeline</span><span>Clip</span><span>Playback</span>
+        <span id="mWorkspace">Workspace</span><span>Help</span>
+      </div>
+      <div class="menu" id="menu">
+        <div>Remote Monitoring</div><div>Console</div><div>Scripts</div>
+        <div class="sub" id="mWI">Workflow Integrations <i>›</i></div>
+        <div class="submenu" id="submenu"><div id="mCap">Cap-o-matic</div></div>
+      </div>
+
+      <div class="viewer">
+        <div class="shot">
+          <svg viewBox="0 0 90 160" class="person"><circle cx="45" cy="58" r="17"/><path d="M8 160c2-40 17-62 37-62s35 22 37 62z"/></svg>
+          <div class="cap" id="viewerCap"></div>
+        </div>
+        <div class="tcode" id="tcode">01:00:00:00</div>
+      </div>
+
+      <div class="timeline" id="timeline">
+        <div class="ruler" id="ruler"></div>
+        <div class="track v2"><b>V2</b><div class="lane" id="capLane"></div></div>
+        <div class="track v1"><b>V1</b><div class="lane"><div class="clip video">interview.mov</div></div></div>
+        <div class="track a1"><b>A1</b><div class="lane"><div class="clip audio" id="wave"></div></div></div>
+        <div class="playhead" id="playhead"></div>
+      </div>
+
+      <div class="console" id="console">
+        <div class="ctop"><span>Console</span><em>Lua</em><em class="off">Py3</em></div>
+        <pre id="consoleText"></pre>
+      </div>
+
+      <div class="downloads" id="downloads">
+        <div class="dtop" data-t="downloads"></div>
+        <div class="file" id="file"><span class="ico">LUA</span><span>Cap-o-matic-0.2.1.lua</span></div>
+      </div>
+
+      <div class="restart" id="restart" data-t="restarting"></div>
+
+      <div class="panel" id="panelBox"><iframe id="panel" title="Cap-o-matic panel" tabindex="-1"></iframe></div>
+
+      <div class="cursor" id="cursor"><svg viewBox="0 0 20 24"><path d="M2 2l14 11-6.5 1.2 4 7.6-3 1.4-4-7.6L2 20z"/></svg><span class="ring" id="ring"></span></div>
+
+      <div class="end" id="end">
+        <div class="end-card">
+          <img src="../plugin/assets/logo.png" alt="" width="54" height="54">
+          <h2 data-t="endTitle"></h2>
+          <p data-t="endText"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section class="steps" aria-live="polite">
+    <div class="step-text">
+      <p class="count" id="count"></p>
+      <h1 id="title"></h1>
+      <p id="text"></p>
+    </div>
+    <div class="controls">
+      <button type="button" id="prev" class="ctl" data-t-label="back">‹</button>
+      <button type="button" id="play" class="ctl play"></button>
+      <button type="button" id="next" class="ctl" data-t-label="next">›</button>
+      <div class="dots" id="dots"></div>
+    </div>
+  </section>
+
+  <p class="get">
+    <a class="cta" href="https://github.com/maxpiens82/cap-o-matic-releases/releases/latest" data-t="download"></a>
+    <span data-t="needs"></span>
+  </p>
+</main>
+
+<script src="tour.js"></script>
+</body>
+</html>

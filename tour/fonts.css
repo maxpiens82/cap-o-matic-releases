@@ -1,0 +1,11 @@
+/* The bundled OFL fonts (installer/fonts), so the walkthrough looks the same on computers without them. */
+@font-face { font-family: 'Montserrat'; font-weight: 800; font-style: normal; font-display: swap; src: url('../installer/fonts/Montserrat/Montserrat-ExtraBold.ttf') format('truetype'); }
+@font-face { font-family: 'Montserrat'; font-weight: 500; font-style: normal; font-display: swap; src: url('../installer/fonts/Montserrat/Montserrat-Medium.ttf') format('truetype'); }
+@font-face { font-family: 'Anton'; font-weight: 400; font-style: normal; font-display: swap; src: url('../installer/fonts/Anton/Anton-Regular.ttf') format('truetype'); }
+@font-face { font-family: 'Archivo Black'; font-weight: 400; font-style: normal; font-display: swap; src: url('../installer/fonts/Archivo Black/ArchivoBlack-Regular.ttf') format('truetype'); }
+@font-face { font-family: 'Bangers'; font-weight: 400; font-style: normal; font-display: swap; src: url('../installer/fonts/Bangers/Bangers-Regular.ttf') format('truetype'); }
+@font-face { font-family: 'Bebas Neue'; font-weight: 400; font-style: normal; font-display: swap; src: url('../installer/fonts/Bebas Neue/BebasNeue-Regular.ttf') format('truetype'); }
+@font-face { font-family: 'Inter'; font-weight: 600; font-style: normal; font-display: swap; src: url('../installer/fonts/Inter/Inter-SemiBold.ttf') format('truetype'); }
+@font-face { font-family: 'Poppins'; font-weight: 700; font-style: normal; font-display: swap; src: url('../installer/fonts/Poppins/Poppins-Bold.ttf') format('truetype'); }
+@font-face { font-family: 'Space Mono'; font-weight: 700; font-style: normal; font-display: swap; src: url('../installer/fonts/Space Mono/SpaceMono-Bold.ttf') format('truetype'); }
+@font-face { font-family: 'TikTok Sans'; font-weight: 600; font-style: normal; font-display: swap; src: url('../installer/fonts/TikTok Sans/TikTokSans36pt-SemiBold.ttf') format('truetype'); }
