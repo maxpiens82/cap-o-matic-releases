@@ -53,7 +53,7 @@
     const REST = { x: 1090, y: 650 };
     const FPS = 30;
     const T0 = 108000;
-    const PRESET = 'Gancho amarillo';
+    const PRESET = 'gancho-amarillo';
     const EMPH = /^(watching|mirando)/i;
 
     const $ = (id) => document.getElementById(id);
@@ -367,10 +367,7 @@
         {
             id: 'look',
             async run() {
-                await press(() => [...pd().querySelectorAll('.tile')].find((t) => {
-                    const n = t.querySelector('.n');
-                    return n && n.textContent === PRESET;
-                }), 800);
+                await press(() => pd().querySelector(`.tile[data-preset="${PRESET}"]`), 800);
                 await wait(1400);
             }
         },

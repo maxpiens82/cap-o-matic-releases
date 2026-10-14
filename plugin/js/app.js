@@ -294,12 +294,17 @@
 
     // ------------------------------------------------------------ Style
 
+    // A preset's name as shown: built-ins in the panel's language.
+    function presetName(p) {
+        return Core.builtins.nameOf(p, S.settings.language);
+    }
+
     function currentStyleName() {
         const st = S.settings.style;
         if (st.source === 'bin') return st.name || '—';
         const found = window.STARTER_STYLES.find((s) => s.id === st.id);
         const preset = S.settings.preset && Core.builtins.BUILTINS.find((p) => p.id === S.settings.preset);
-        if (preset && found) return `${preset.name} (${found.name})`;
+        if (preset && found) return `${presetName(preset)} (${found.name})`;
         return found ? found.name : '—';
     }
 
@@ -337,7 +342,7 @@
                 const s = window.STARTER_STYLES.find((x) => x.id === styleId);
                 return !!s && (S.filter === 'All' || s.tags.includes(S.filter)) && (!q || name.toLowerCase().includes(q));
             };
-            const presets = Core.builtins.BUILTINS.filter((p) => match(p.style.id, p.name));
+            const presets = Core.builtins.BUILTINS.filter((p) => match(p.style.id, presetName(p)));
             const list = window.STARTER_STYLES.filter((s) => match(s.id, s.name));
             presetGrid.replaceChildren(...presets.map(presetTile));
             grid.replaceChildren(...list.map(tile));
@@ -407,14 +412,14 @@
         const active = one ? 0 : 1;
         const on = S.settings.preset === p.id;
         return h('button', {
-            type: 'button', class: 'tile' + (on ? ' on' : ''), 'aria-pressed': String(on),
+            type: 'button', class: 'tile' + (on ? ' on' : ''), 'aria-pressed': String(on), 'data-preset': p.id,
             title: has ? '' : t('de.fontNotInstalled', { font: L.font }),
             onclick: () => applyPreset(p)
         },
         h('span', { class: 'stage', style: `background:${st.stage}` },
             h('span', { style: paintLook.line + `font-size:${px.toFixed(2)}px;` },
                 ...words.map((w, i) => h('span', { style: paintLook.shade(paintLook.word(i, active) + fontDecl(L.font, fStyle), i === active) }, w)))),
-        h('span', { class: 'tile-meta' }, h('span', { class: 'n' }, p.name),
+        h('span', { class: 'tile-meta' }, h('span', { class: 'n' }, presetName(p)),
             h('span', { class: 't' + (has ? '' : ' missing') }, has ? `${st.name} · ${L.font}` : t('de.fontNotInstalled', { font: L.font }))));
     }
 
@@ -1295,7 +1300,7 @@
             h('div', { class: 'row' }, h('label', { class: 'lbl', for: 'lkPreset' }, t('de.preset')),
                 select('lkPreset', [['', t('de.presetPick')]]
                     .concat(saved.length ? [{ group: t('se.yourPresets'), options: saved.map((p, i) => [`u${i}`, p.name]) }] : [])
-                    .concat([{ group: t('se.builtins'), options: Core.builtins.BUILTINS.map((p, i) => [`b${i}`, p.name]) }]), '', (v) => {
+                    .concat([{ group: t('se.builtins'), options: Core.builtins.BUILTINS.map((p, i) => [`b${i}`, presetName(p)]) }]), '', (v) => {
                     if (v) applyPreset(v[0] === 'b' ? Core.builtins.BUILTINS[Number(v.slice(1))] : saved[Number(v.slice(1))]);
                 })),
             bin ? checkbox('keepTpl', t('de.keepTemplate'), L.keepTemplate, (v) => setLook({ keepTemplate: v })) : null,
@@ -1674,7 +1679,7 @@
         else delete S.settings.preset;
         saveSettings();
         renderScreen();
-        flash(dropped.length ? fontsMessage('se.appliedNoFonts', [...new Set(dropped)], { name: p.name }) : t('se.applied', { name: p.name }), dropped.length > 0);
+        flash(dropped.length ? fontsMessage('se.appliedNoFonts', [...new Set(dropped)], { name: presetName(p) }) : t('se.applied', { name: presetName(p) }), dropped.length > 0);
     }
 
     function viewPresets() {
@@ -1769,13 +1774,13 @@
         }, icon('download', 14), ' ', t('se.exportPack'));
         // Built-ins can be applied or copied into your own presets, not changed or deleted.
         const builtinRow = (p) => h('div', { class: 'list-item', style: 'cursor:default' },
-            h('span', { style: 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap', title: p.name }, p.name),
+            h('span', { style: 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap', title: presetName(p) }, presetName(p)),
             h('button', { type: 'button', class: 'btn small', onclick: () => applyPreset(p) }, t('se.apply')),
             h('button', {
-                type: 'button', class: 'icon-btn', title: t('se.duplicate'), 'aria-label': `${t('se.duplicate')}: ${p.name}`,
+                type: 'button', class: 'icon-btn', title: t('se.duplicate'), 'aria-label': `${t('se.duplicate')}: ${presetName(p)}`,
                 onclick: () => {
                     const copy = Core.presets.parse(Core.presets.stringify(p));
-                    copy.name = Core.presets.freeName(list, p.name);
+                    copy.name = Core.presets.freeName(list, presetName(p));
                     savePresetList(Core.presets.upsert(list, copy));
                     renderScreen();
                     flash(t('se.duplicated', { name: copy.name }));
