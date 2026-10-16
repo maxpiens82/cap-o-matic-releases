@@ -50,7 +50,7 @@
    "speaker": null
   },
   {
-   "text": "Elige",
+   "text": "Elegí",
    "start": 108138,
    "end": 108150,
    "speaker": null
@@ -68,7 +68,7 @@
    "speaker": null
   },
   {
-   "text": "transcribe",
+   "text": "transcribí",
    "start": 108182,
    "end": 108201,
    "speaker": null
@@ -92,7 +92,7 @@
    "speaker": null
   },
   {
-   "text": "corrige",
+   "text": "corregí",
    "start": 108241,
    "end": 108256,
    "speaker": null
@@ -116,57 +116,45 @@
    "speaker": null
   },
   {
-   "text": "envía",
+   "text": "poné",
    "start": 108303,
-   "end": 108315,
+   "end": 108313,
    "speaker": null
   },
   {
    "text": "subtítulos",
-   "start": 108317,
-   "end": 108336,
+   "start": 108315,
+   "end": 108334,
    "speaker": null
   },
   {
    "text": "animados",
-   "start": 108338,
-   "end": 108354,
+   "start": 108336,
+   "end": 108352,
    "speaker": null
   },
   {
    "text": "directo",
-   "start": 108356,
-   "end": 108371,
+   "start": 108354,
+   "end": 108369,
    "speaker": null
   },
   {
-   "text": "a",
-   "start": 108373,
-   "end": 108379,
+   "text": "en",
+   "start": 108371,
+   "end": 108378,
    "speaker": null
   },
   {
    "text": "tu",
-   "start": 108381,
-   "end": 108388,
+   "start": 108380,
+   "end": 108387,
    "speaker": null
   },
   {
-   "text": "línea",
-   "start": 108390,
-   "end": 108402,
-   "speaker": null
-  },
-  {
-   "text": "de",
-   "start": 108404,
-   "end": 108411,
-   "speaker": null
-  },
-  {
-   "text": "tiempo.",
-   "start": 108413,
-   "end": 108426,
+   "text": "timeline.",
+   "start": 108389,
+   "end": 108405,
    "speaker": null
   }
  ]

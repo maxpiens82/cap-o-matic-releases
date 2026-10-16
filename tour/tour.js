@@ -25,12 +25,14 @@
                 updates: ['Stay up to date', 'New versions install from Settings → Updates. Your presets and settings stay.']
             }
         },
+        // Spanish here is marketing copy: Rioplatense, with vos (docs/BRAND.md section 11). The console
+        // lines copy the installer's own messages, which stay in the panel's neutral tú.
         es: {
-            tagline: 'Subtítulos animados para DaVinci Resolve Studio, a partir de lo que se dice en tu línea de tiempo.',
+            tagline: 'Subtítulos animados para DaVinci Resolve Studio, a partir de lo que se dice en tu timeline.',
             downloads: 'Descargas', restarting: 'Reiniciando Resolve…',
             endTitle: 'Ese es todo el flujo.',
-            endText: 'Descarga Cap-o-matic, arrástralo a la consola y subtitula tu próximo video.',
-            download: 'Descarga la última versión', needs: 'Gratis · Windows · DaVinci Resolve Studio',
+            endText: 'Descargá Cap-o-matic, soltalo en la consola y subtitulá tu próximo video.',
+            download: 'Descargá la última versión', needs: 'Gratis · Windows · DaVinci Resolve Studio',
             back: 'Paso anterior', next: 'Paso siguiente', play: 'Reproducir', pause: 'Pausa', count: 'Paso {n} de {total}',
             console: [
                 '[Cap-o-matic] Cap-o-matic 0.2.1 está instalado.',
@@ -38,12 +40,12 @@
                 '[Cap-o-matic] Reinicia DaVinci Resolve y abre Workspace > Workflow Integrations > Cap-o-matic.'
             ],
             steps: {
-                install: ['Instala', 'Descarga el archivo .lua y arrástralo a la consola de Resolve (Workspace → Console). Reinicia Resolve y abre Cap-o-matic desde Workspace → Workflow Integrations.'],
-                look: ['Elige un estilo', 'Parte de un preset listo o de un estilo base que ajustas tú: fuente, colores, contorno, tamaño y posición.'],
-                transcribe: ['Transcribe', 'Un clic convierte lo que se dice en tu línea de tiempo en palabras con su tiempo exacto, divididas en subtítulos cortos.'],
-                edit: ['Edita', 'Corrige una palabra, reagrupa subtítulos o pinta una palabra con el pincel de énfasis para que resalte.'],
-                deliver: ['Entrega', 'Los subtítulos llegan a una pista nueva como títulos animados, palabra por palabra, listos para renderizar. ¿Cambiaste de idea? Cámbiales el estilo en su lugar.'],
-                updates: ['Mantente al día', 'Las versiones nuevas se instalan desde Ajustes → Actualizaciones. Tus presets y ajustes se quedan.']
+                install: ['Instalá', 'Descargá el archivo .lua y soltalo en la consola de Resolve (Workspace → Console). Reiniciá Resolve y abrí Cap-o-matic desde Workspace → Workflow Integrations.'],
+                look: ['Elegí un estilo', 'Arrancá de un preset armado o de un estilo base que ajustás vos: fuente, colores, contorno, tamaño y posición.'],
+                transcribe: ['Transcribí', 'Un clic convierte lo que se dice en tu timeline en palabras con su tiempo exacto, divididas en subtítulos cortos.'],
+                edit: ['Editá', 'Corregí una palabra, reagrupá subtítulos o pintá una palabra con el pincel de énfasis para que resalte.'],
+                deliver: ['Entregá', 'Los subtítulos caen en una pista nueva como títulos animados, palabra por palabra, listos para renderizar. ¿Cambiaste de idea? Cambiales el estilo ahí mismo.'],
+                updates: ['Mantenete al día', 'Las versiones nuevas se instalan desde Ajustes → Actualizaciones. Tus presets y ajustes quedan como están.']
             }
         }
     };
