@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/cap-o-matic-logo-light.svg">
+  <img alt="Cap-o-matic by ENNEA" src="images/cap-o-matic-logo.svg" width="420">
+</picture>
+
 # Cap-o-matic releases
 
 Animated captions for DaVinci Resolve Studio, by ENNEA.
@@ -23,10 +28,10 @@ Updates install from the panel itself: **Settings → Check for updates**.
 
 ## Instalación
 
-1. Descarga `Cap-o-matic-<versión>.lua` de la última versión.
-2. Abre DaVinci Resolve Studio y ve a **Workspace → Console**.
-3. Arrastra el archivo `.lua` a la consola. Instala Cap-o-matic y las fuentes que usan sus presets.
-4. Reinicia Resolve y abre **Workspace → Workflow Integrations → Cap-o-matic**.
+1. Descargá `Cap-o-matic-<versión>.lua` de la última versión.
+2. Abrí DaVinci Resolve Studio y andá a **Workspace → Console**.
+3. Arrastrá el archivo `.lua` a la consola. Instala Cap-o-matic y las fuentes que usan sus presets.
+4. Reiniciá Resolve y abrí **Workspace → Workflow Integrations → Cap-o-matic**.
 
 Las actualizaciones se instalan desde el propio panel: **Ajustes → Buscar actualizaciones**.
 
