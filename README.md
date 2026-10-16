@@ -1,6 +1,6 @@
 # Cap-o-matic releases
 
-Animated captions for DaVinci Resolve Studio, by RE!
+Animated captions for DaVinci Resolve Studio, by ENNEA.
 
 Download the latest version from **[Releases](https://github.com/maxpiens82/cap-o-matic-releases/releases/latest)**.
 
