@@ -7,7 +7,8 @@
 })(this, function () {
     'use strict';
 
-    const rules = (maxWords, maxChars, lines) => ({ maxWords, maxChars, lines, sentenceBreak: true, pauseBreak: true, pauseSeconds: 0.4 });
+    // maxWords and maxChars are per line (since 0.2.3; before, maxWords counted the whole caption).
+    const rules = (maxWords, maxChars, lines) => ({ maxWords, maxChars, lines, sentenceBreak: true, pauseBreak: true, pauseSeconds: 0.4, perLine: true });
     const shadow = (opacity, distance, softness) => ({ on: opacity > 0, color: '#000000', opacity: opacity || 60, distance, angle: 270, softness });
     const brush = (color, size) => ({ color, size, font: '', fontStyle: '' });
     const outline = (width) => ({ on: true, color: '#000000', width });
@@ -27,7 +28,7 @@
             style: 'pop', rules: rules(3, 15, 1), brush: brush('#FFD93B', 1.15),
             look: { font: 'Montserrat', fontStyle: 'ExtraBold', size: 137, y: 64, caseMode: 'upper', accent: '#FFD93B', pop: true, outline: outline(0.09), shadow: shadow(55, 5, 10) } },
         { id: 'negocios', name: 'Negocios', en: 'Business', after: 'Alex Hormozi',
-            style: 'pop', rules: rules(4, 15, 2), brush: brush('#FFD93B', 1.15),
+            style: 'pop', rules: rules(2, 15, 2), brush: brush('#FFD93B', 1.15),
             look: { font: 'Anton', fontStyle: 'Regular', size: 198, y: 62, caseMode: 'upper', accent: '#2EE86B', pop: true, outline: outline(0.07), shadow: shadow(60, 4, 12) } },
         { id: 'una-palabra', name: 'Una palabra', en: 'One Word', after: 'MrBeast, one word at a time',
             style: 'pop', rules: rules(1, 16, 1), brush: brush('#FFD93B', 1.1),
@@ -36,13 +37,13 @@
             style: 'highlight', rules: rules(3, 15, 1), brush: brush('#FFD93B', 1.15),
             look: { font: 'Montserrat', fontStyle: 'ExtraBold', size: 131, y: 64, caseMode: 'upper', accent: '#7CF29A', shadow: shadow(55, 5, 10) } },
         { id: 'foco', name: 'Foco', en: 'Focus', after: 'karaoke fill',
-            style: 'spotlight', rules: rules(5, 18, 2), brush: brush('#FFD93B', 1.15),
+            style: 'spotlight', rules: rules(3, 18, 2), brush: brush('#FFD93B', 1.15),
             look: { font: 'Poppins', fontStyle: 'Bold', size: 130, y: 64, caseMode: 'as', accent: '#FFFFFF', dim: 42, shadow: shadow(70, 4, 14) } },
         { id: 'sereno', name: 'Sereno', en: 'Calm', after: 'Iman Gadzhi, dim to white',
-            style: 'spotlight', rules: rules(6, 22, 2), brush: brush('#FFD93B', 1.15),
+            style: 'spotlight', rules: rules(3, 22, 2), brush: brush('#FFD93B', 1.15),
             look: { font: 'Montserrat', fontStyle: 'Medium', size: 107, y: 66, caseMode: 'lower', strip: { '.': true, ',': true }, accent: '#FFFFFF', dim: 50, shadow: shadow(65, 3, 16) } },
         { id: 'subtitulo-clasico', name: 'Subtítulo clásico', en: 'Classic Subtitle', after: "TikTok's classic caption box",
-            style: 'plain', rules: rules(6, 24, 2), brush: brush('#FFD93B', 1.15),
+            style: 'plain', rules: rules(3, 24, 2), brush: brush('#FFD93B', 1.15),
             look: { font: 'Inter', fontStyle: 'SemiBold', size: 97, y: 70, caseMode: 'as', box: { color: '#000000', opacity: 62 }, shadow: NO_SHADOW } },
         { id: 'bloque-de-marca', name: 'Bloque de marca', en: 'Brand Block', after: 'brand color blocks',
             style: 'plain', rules: rules(4, 17, 1), brush: brush('#FFFFFF', 1.15),
@@ -51,10 +52,10 @@
             style: 'glow', rules: rules(3, 19, 1), brush: brush('#FFD93B', 1.15),
             look: { font: 'Bebas Neue', fontStyle: 'Regular', size: 195, y: 62, caseMode: 'upper', color: '#FFFFFF', accent: '#FF3EA5', shadow: NO_SHADOW } },
         { id: 'nativo', name: 'Nativo', en: 'Native', after: "TikTok's own captions",
-            style: 'plain', rules: rules(5, 22, 2), brush: brush('#FFD93B', 1.15),
+            style: 'plain', rules: rules(3, 22, 2), brush: brush('#FFD93B', 1.15),
             look: { font: 'TikTok Sans', fontStyle: 'SemiBold', size: 110, y: 68, caseMode: 'as', outline: outline(0.045), shadow: shadow(50, 3, 6) } },
         { id: 'maquina-de-escribir', name: 'Máquina de escribir', en: 'Typed Out', after: 'typewriter captions',
-            style: 'typewriter', rules: rules(6, 20, 2), brush: brush('#FFD93B', 1.15),
+            style: 'typewriter', rules: rules(3, 20, 2), brush: brush('#FFD93B', 1.15),
             look: { font: 'Space Mono', fontStyle: 'Bold', size: 115, y: 66, caseMode: 'as', shadow: shadow(75, 4, 12) } }
     ];
 

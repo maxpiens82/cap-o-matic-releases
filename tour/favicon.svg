@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <title>Cap-o-matic</title>
+  <rect width="32" height="32" rx="7.04" fill="#18181B"/>
+  <path fill="#F4F4F5" d="M16 6.72L11.04 15.31L20.96 15.31ZM11.04 15.31L6.08 23.9L16 23.9ZM20.96 15.31L16 23.9L25.92 23.9Z"/>
+  <path fill="#FF8A1F" d="M11.04 15.31L20.96 15.31L16 23.9Z"/>
+</svg>

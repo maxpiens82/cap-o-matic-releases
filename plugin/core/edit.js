@@ -11,7 +11,7 @@
     }
 
     function lineBreakFor(words, rules) {
-        return rules && rules.lines === 2 ? phrases.bestLineBreak(words, rules.maxChars) : null;
+        return rules && rules.lines === 2 ? phrases.bestLineBreak(words, rules.maxChars, rules.maxWords) : null;
     }
 
     // Splits caption ci so word wi starts a new caption.
@@ -103,6 +103,51 @@
         return !!a && !!b && a.color === b.color && a.size === b.size && (a.font || '') === (b.font || '');
     }
 
+    // Spell check marks on a word: fixedFrom (the text before an automatic fix) and spell (choices
+    // for a close call). Replacing a word keeps its timing and emphasis and drops the marks.
+    function replaceWord(caps, ci, wi, text) {
+        const c = caps[ci];
+        const w = c && c.words[wi];
+        const clean = String(text || '').trim();
+        if (!w || !clean || /\s/.test(clean)) return caps;
+        const next = Object.assign({}, w, { text: clean });
+        delete next.fixedFrom;
+        delete next.spell;
+        return replaceAt(caps, ci, Object.assign({}, c, { words: c.words.map((x, k) => (k === wi ? next : x)) }));
+    }
+
+    // Keeps the word as it is and drops its marks.
+    function clearSpell(caps, ci, wi) {
+        const c = caps[ci];
+        const w = c && c.words[wi];
+        if (!w || (w.fixedFrom == null && !w.spell)) return caps;
+        const next = Object.assign({}, w);
+        delete next.fixedFrom;
+        delete next.spell;
+        return replaceAt(caps, ci, Object.assign({}, c, { words: c.words.map((x, k) => (k === wi ? next : x)) }));
+    }
+
+    // Applies spell.check results (one per word, in caption order): fixes go in, close calls get
+    // their choices. Returns { caps, fixed, unsure }.
+    function applySpell(caps, results) {
+        let n = 0;
+        let fixed = 0;
+        let unsure = 0;
+        const out = caps.map((c) => Object.assign({}, c, {
+            words: c.words.map((w) => {
+                const r = results[n++];
+                if (!r) return w;
+                if (r.fix) {
+                    fixed++;
+                    return Object.assign({}, w, { text: r.fix.to, fixedFrom: r.fix.from });
+                }
+                unsure++;
+                return Object.assign({}, w, { spell: r.unsure.choices });
+            })
+        }));
+        return { caps: out, fixed, unsure };
+    }
+
     // Paints word wi with the brush, or clears it when it already has exactly that look.
     function paint(caps, ci, wi, brush) {
         const c = caps[ci];
@@ -160,5 +205,5 @@
         return -1;
     }
 
-    return { split, merge, setText, paint, setLineBreak, nudge, resetNudge, captionAt, sameEmph };
+    return { split, merge, setText, paint, setLineBreak, nudge, resetNudge, captionAt, sameEmph, replaceWord, clearSpell, applySpell };
 });

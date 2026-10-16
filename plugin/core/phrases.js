@@ -7,23 +7,26 @@
 })(this, function () {
     'use strict';
 
-    const DEFAULT_RULES = { maxWords: 4, maxChars: 28, lines: 1, sentenceBreak: true, pauseBreak: true, pauseSeconds: 0.4 };
+    // perLine: maxWords counts per line (0.2.3 on); rules without it are older (presets.migrateRules).
+    const DEFAULT_RULES = { maxWords: 4, maxChars: 28, lines: 1, sentenceBreak: true, pauseBreak: true, pauseSeconds: 0.4, perLine: true };
     const SENTENCE_END = /[.!?…]["'»”’)]*$/;
 
     function textLength(words) {
         return words.reduce((n, w, i) => n + w.text.length + (i ? 1 : 0), 0);
     }
 
-    // Best line break for a two-line caption: both lines within maxChars, as balanced as
-    // possible, ties going to a longer first line. Null when it fits on one line or can't split.
-    function bestLineBreak(words, maxChars) {
-        if (words.length < 2 || textLength(words) <= maxChars) return null;
+    // Best line break for a two-line caption: both lines within maxChars and maxWords (both are
+    // per line), as balanced as possible, ties going to a longer first line. Null when it fits on
+    // one line or can't split.
+    function bestLineBreak(words, maxChars, maxWords) {
+        const perLine = maxWords || Infinity;
+        if (words.length < 2 || (textLength(words) <= maxChars && words.length <= perLine)) return null;
         let best = null;
         let bestScore = Infinity;
         for (let k = 1; k < words.length; k++) {
             const a = textLength(words.slice(0, k));
             const b = textLength(words.slice(k));
-            if (a > maxChars || b > maxChars) continue;
+            if (a > maxChars || b > maxChars || k > perLine || words.length - k > perLine) continue;
             const score = Math.abs(a - b) + (b > a ? 0.5 : 0);
             if (score < bestScore) {
                 bestScore = score;
@@ -33,9 +36,10 @@
         return best;
     }
 
+    // Max words and max characters are per line: a two-line caption holds up to twice as many.
     function fits(words, rules) {
-        if (textLength(words) <= rules.maxChars) return true;
-        return rules.lines === 2 && bestLineBreak(words, rules.maxChars) !== null;
+        if (textLength(words) <= rules.maxChars && words.length <= rules.maxWords) return true;
+        return rules.lines === 2 && bestLineBreak(words, rules.maxChars, rules.maxWords) !== null;
     }
 
     function build(words, rulesIn, fps) {
@@ -47,7 +51,6 @@
             if (cur.length) {
                 const prev = cur[cur.length - 1];
                 const breakHere =
-                    cur.length >= rules.maxWords ||
                     (rules.sentenceBreak && SENTENCE_END.test(prev.text)) ||
                     w.start - prev.end > pauseFrames ||
                     !fits(cur.concat(w), rules);
@@ -61,7 +64,7 @@
         if (cur.length) groups.push(cur);
         return groups.map((g) => ({
             words: g.map((w) => ({ text: w.text, start: w.start, end: w.end, emph: null })),
-            lineBreak: rules.lines === 2 ? bestLineBreak(g, rules.maxChars) : null,
+            lineBreak: rules.lines === 2 ? bestLineBreak(g, rules.maxChars, rules.maxWords) : null,
             nudgeStart: 0,
             nudgeEnd: 0
         }));

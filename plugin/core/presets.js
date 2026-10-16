@@ -28,7 +28,7 @@
     // A schema maps each key to a test, or to a nested schema that must pass whole.
     const SHADOW = { on: isBool, color: isHex, opacity: isNum(0, 100), distance: isNum(0, 40), angle: isNum(0, 359), softness: isNum(0, 40) };
     const SCHEMA = {
-        rules: { maxWords: isNum(1, 8, true), maxChars: isNum(6, 50, true), lines: oneOf(1, 2), sentenceBreak: isBool, pauseBreak: isBool, pauseSeconds: isNum(0.1, 3) },
+        rules: { maxWords: isNum(1, 8, true), maxChars: isNum(6, 50, true), lines: oneOf(1, 2), sentenceBreak: isBool, pauseBreak: isBool, pauseSeconds: isNum(0.1, 3), perLine: isBool },
         brush: { color: isHex, size: isNum(0.5, 3), font: isStr(100), fontStyle: isStr(100) },
         look: {
             size: isNum(30, 200), x: isNum(0, 100), y: isNum(0, 100), font: isStr(100), fontStyle: isStr(100), color: (v) => v === '' || isHex(v),
@@ -38,7 +38,10 @@
             guide: isBool, emphOn: isBool, emphColor: isHex, emphSize: isNum(0.5, 3), shadow: SHADOW,
             // Style settings (comp.js tuned): accent color, line box, Pop's growing, Spotlight dim, outline.
             accent: (v) => v === '' || isHex(v), box: { color: isHex, opacity: isNum(0, 100) }, pop: isBool, dim: isNum(0, 100),
-            outline: { on: isBool, color: isHex, width: isNum(0, 0.5) }
+            outline: { on: isBool, color: isHex, width: isNum(0, 0.5) },
+            // Motion: fade (frames, rest opacity %) and tracking that opens up.
+            fade: { on: isBool, in: isNum(0, 60, true), out: isNum(0, 60, true), rest: isNum(10, 100) },
+            tracking: { on: isBool, from: isNum(50, 100), over: isNum(10, 100) }
         }
     };
 
@@ -63,6 +66,16 @@
         if (s.source === 'pack' && isStr(40)(s.id)) return { source: 'pack', id: s.id };
         if (s.source === 'bin' && isStr(200)(s.name)) return { source: 'bin', name: s.name, id: isStr(200)(s.id) ? s.id : '' };
         return null;
+    }
+
+    // Before 0.2.3, maxWords counted the whole caption; now it counts per line. Older two-line
+    // rules get half the words per line (rounded up), so their captions stay the same size. Marked
+    // perLine, so it happens once. One-line rules mean the same either way.
+    function migrateRules(rules) {
+        if (!rules || typeof rules !== 'object' || rules.perLine === true) return rules;
+        const out = Object.assign({}, rules, { perLine: true });
+        if (out.lines === 2 && Number.isInteger(out.maxWords)) out.maxWords = Math.max(1, Math.ceil(out.maxWords / 2));
+        return out;
     }
 
     function cleanName(name) {
@@ -114,7 +127,7 @@
         const out = {
             kind: KIND, version: VERSION, name: cleanName(data.name) || 'Preset',
             savedAt: typeof data.savedAt === 'string' ? data.savedAt.slice(0, 40) : '',
-            style: pickStyle(data.style), rules: pick(data.rules, SCHEMA.rules), brush: pick(data.brush, SCHEMA.brush), look: pick(data.look, SCHEMA.look)
+            style: pickStyle(data.style), rules: migrateRules(pick(data.rules, SCHEMA.rules)), brush: pick(data.brush, SCHEMA.brush), look: pick(data.look, SCHEMA.look)
         };
         const pack = cleanName(data.pack);
         if (pack) {
@@ -211,5 +224,5 @@
         }
     }
 
-    return { KIND, PACK_KIND, VERSION, MAX_PACK, capture, apply, parse, parseFile, makePack, addPack, stringify, upsert, freeName, cleanName };
+    return { KIND, PACK_KIND, VERSION, MAX_PACK, capture, apply, parse, parseFile, makePack, addPack, stringify, upsert, freeName, cleanName, migrateRules };
 });

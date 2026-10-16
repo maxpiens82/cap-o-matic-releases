@@ -5,8 +5,9 @@
     --line: #2c2c31;
     --text: #ececef;
     --muted: #a1a1aa;
-    --accent: #e8522a;
-    --accent-2: #ff6b3d;
+    --accent: #eb7f1d;      /* Cap-o-matic's HUD orange (docs/BRAND.md section 11); dark text on it */
+    --accent-2: #ffa14c;
+    --accent-ink: #18181b;
     --teal: #2aa198;
     --ui: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
@@ -20,7 +21,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .tag { margin: 0; color: var(--muted); font-size: 14px; flex: 1; min-width: 200px; }
 .lang { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .lang button { background: none; border: 0; padding: 6px 12px; font-size: 13px; font-weight: 600; color: var(--muted); }
-.lang button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.lang button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 
 main { max-width: 1280px; margin: 0 auto; padding: 0 16px 32px; }
 .frame { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 12px; border: 1px solid var(--line); background: #0d0d0f; }
@@ -104,13 +105,13 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 16px 32px; }
 .steps p#text { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.5; max-width: 760px; }
 .controls { display: flex; align-items: center; gap: 8px; }
 .ctl { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); font-size: 20px; line-height: 1; }
-.ctl.play { background: var(--accent); border-color: var(--accent); color: #fff; font-size: 15px; }
+.ctl.play { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-size: 15px; }
 .ctl:hover { border-color: #55555e; }
 .dots { display: flex; gap: 6px; margin-left: 8px; }
 .dots button { width: 10px; height: 10px; padding: 0; border-radius: 50%; border: 0; background: #3a3a41; }
 .dots button.on { background: var(--accent-2); width: 24px; border-radius: 5px; }
 .get { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 18px 2px 0; color: var(--muted); font-size: 14px; }
-.cta { background: var(--accent); color: #fff; text-decoration: none; font-weight: 700; padding: 10px 18px; border-radius: 8px; }
+.cta { background: var(--accent); color: var(--accent-ink); text-decoration: none; font-weight: 700; padding: 10px 18px; border-radius: 8px; }
 .cta:hover { background: var(--accent-2); }
 :focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
 .frame.busy::after { content: ''; position: absolute; inset: 0; background: #0d0d0f99 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='20' r='15' fill='none' stroke='%23ff6b3d' stroke-width='3' stroke-dasharray='60 40'%3E%3CanimateTransform attributeName='transform' type='rotate' from='0 20 20' to='360 20 20' dur='.9s' repeatCount='indefinite'/%3E%3C/circle%3E%3C/svg%3E") center no-repeat; }

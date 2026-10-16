@@ -229,7 +229,8 @@
 
     // look: { style, width, height, size, x, y (0–100, from top-left), caseMode, strip,
     //         font, fontStyle, color (main text override), emphOverride: { color, size },
-    //         accent, box, pop, dim (see tuned), outline: { on, color, width } }
+    //         accent, box, pop, dim (see tuned), outline: { on, color, width },
+    //         fade: { on, in, out (frames), rest (%) }, tracking: { on, from (%), over (% of the caption) } }
     function build(caption, clip, look) {
         const style = tuned(look);
         const duration = Math.max(1, clip.end - clip.start);
@@ -349,7 +350,19 @@
             inputs.Font = { value: common.Font, expr: 'Base.Font' };
             inputs.Style = { value: common.Style, expr: 'Base.Style' };
         }
-        return assemble(tools, extra, duration, common.Center);
+
+        // Tracking that opens up: every layer's letter spacing (Text+ CharacterSpacing, 1 = normal)
+        // eases out from tight to normal over the first `over`% of the caption, all from one spline
+        // so the layers stay lined up.
+        const tr = look.tracking && look.tracking.on ? look.tracking : null;
+        if (tr && tr.from < 100) {
+            const span = Math.max(1, Math.round((duration - 1) * (tr.over == null ? 100 : tr.over) / 100));
+            const tight = trackingStart(tr.from);
+            const keys = [0, 0.25, 0.5, 0.75, 1].map((t) => [t * span, 1 - (1 - tight) * (1 - t) * (1 - t)]);
+            extra.push(spline('Tracking', keys, false));
+            for (const [, inputs] of tools) inputs.CharacterSpacing = { spline: 'Tracking' };
+        }
+        return assemble(tools, extra, duration, common.Center, fadeKeys(look.fade, duration));
     }
 
     // What the caption shows in Resolve's Edit-page Inspector (Title tab). Size and Position act on
@@ -363,7 +376,35 @@
     // The caption is one MacroOperator named "Template" in a comp tagged TEMPLATE_ID: only that pair
     // gets the Inspector controls (verified in Resolve 21.1: the tag or the name alone show nothing).
     // A macro is transparent in the file, so MediaOut1 links straight to the inner Transform.
-    function assemble(tools, extra, duration, center) {
+    // The tracking setting's start (50–100 %) as Text+ CharacterSpacing. Text+ moves each letter by
+    // about 1.43 em per unit (render check 2026-10-15: at 0.8 the word spaces vanish and letters
+    // overlap), so the setting is scaled down: 80 % → 0.95, about −0.07 em a letter; 50 % → 0.875.
+    const TRACK_SCALE = 0.25;
+    function trackingStart(from) {
+        return 1 - (1 - Math.min(100, Math.max(0, from)) / 100) * TRACK_SCALE;
+    }
+
+    // Fade in, hold at the rest opacity, fade out: Blend keys for the whole caption, or null when it
+    // stays fully opaque. fade: { on, in, out (frames), rest (10–100 %) }.
+    function fadeKeys(fade, duration) {
+        if (!fade || !fade.on) return null;
+        const last = Math.max(1, duration - 1);
+        const rest = Math.min(100, Math.max(0, fade.rest == null ? 100 : fade.rest)) / 100;
+        let fin = Math.max(0, Math.round(fade.in || 0));
+        let fout = Math.max(0, Math.round(fade.out || 0));
+        // Short captions: both fades share the length.
+        if (fin + fout > last) {
+            const k = last / (fin + fout);
+            fin = Math.floor(fin * k);
+            fout = Math.floor(fout * k);
+        }
+        if (!fin && !fout && rest >= 1) return null;
+        const keys = fin ? [[0, 0], [fin, rest]] : [[0, rest]];
+        if (fout) keys.push([last - fout, rest], [last, 0]);
+        return keys;
+    }
+
+    function assemble(tools, extra, duration, center, fade) {
         let body = tools.map(([name, inputs]) => textTool(name, inputs)).join('') + extra.join('');
         let last = tools[0][0];
         for (let i = 1; i < tools.length; i++) {
@@ -371,6 +412,15 @@
             body += `\t\t${merge} = Merge {\n\t\t\tInputs = {\n\t\t\t\tBackground = Input { SourceOp = ${lua(last)}, Source = "Output", },\n` +
                 `\t\t\t\tForeground = Input { SourceOp = ${lua(tools[i][0])}, Source = "Output", },\n\t\t\t},\n\t\t},\n`;
             last = merge;
+        }
+        // The fade: the whole caption merged over a clear frame, its Blend keyed.
+        if (fade) {
+            body += toolBlock('Clear', 'Background', { GlobalOut: duration - 1, UseFrameFormatSettings: 1, TopLeftAlpha: 0 }) +
+                spline('FadeBlend', fade, false) +
+                `\t\tFade = Merge {\n\t\t\tInputs = {\n\t\t\t\tBackground = Input { SourceOp = "Clear", Source = "Output", },\n` +
+                `\t\t\t\tForeground = Input { SourceOp = ${lua(last)}, Source = "Output", },\n` +
+                `\t\t\t\tBlend = Input { SourceOp = "FadeBlend", Source = "Value", },\n\t\t\t},\n\t\t},\n`;
+            last = 'Fade';
         }
         // Pivot on the caption so Size grows it in place; Center 0.5 means "where Cap-o-matic put it".
         body += `\t\tPlace = Transform {\n\t\t\tInputs = {\n\t\t\t\tInput = Input { SourceOp = ${lua(last)}, Source = "Output", },\n` +
@@ -524,27 +574,77 @@
     // file, because comp.AddTool("Loader") opens a modal file dialog), held for the whole clip,
     // scaled to the timeline width and merged at `opacity` over a transparent frame.
     // opts: { file, width, height, duration, opacity (0–1), imageWidth (px, default 1080) }
+    // The safe-zone mask for 9:16 timelines, drawn in Fusion: coloured zones and labels where the
+    // short-form apps put their buttons and text (the same layout as assets/guide-9x16.png, which
+    // the panel's preview uses). No image file: a Loader in a comp makes Resolve add the file to the
+    // Media Pool every time, so the mask used to leave copies behind. Layout in pixels at 1080×1920
+    // (left, top, right, bottom), scaled to the timeline's width.
+    const MASK_ZONES = [
+        { box: [0, 0, 1080, 208], color: '#FFB0B0' },
+        { box: [913, 662, 1080, 1480], color: '#FFB0B0' },
+        { box: [0, 1480, 1080, 1920], color: '#FFB0B0' },
+        { box: [107, 276, 973, 385], color: '#FFFFAA' },
+        { box: [246, 429, 834, 1017], color: '#C9F7AF', round: true },
+        { box: [257, 1069, 823, 1398], color: '#AFAFFF' }
+    ];
+    const MASK_LABELS = [
+        { text: 'BLOCKED', at: [540, 105], color: '#6A4C4C' },
+        { text: 'SECONDARY TEXT', at: [540, 331], color: '#5E5E3A' },
+        { text: 'CENTER OF\nATTENTION', at: [540, 723], color: '#546B4A' },
+        { text: 'SUBTITLES', at: [540, 1230], color: '#4E4E72' },
+        { text: 'BLOCKED', at: [540, 1700], color: '#6A4C4C' }
+    ];
+
     function guide(opts) {
         const last = Math.max(1, opts.duration) - 1;
-        const clip = [
-            'ID = "Clip1"', `Filename = ${lua(opts.file)}`, 'FormatID = "PNGFormat"', 'StartFrame = 0', 'LengthSetManually = true',
-            'TrimIn = 0', 'TrimOut = 0', 'ExtendFirst = 0', `ExtendLast = ${last}`, 'Loop = 0', 'AspectMode = 0', 'Depth = 0',
-            'TimeCode = 0', 'GlobalStart = 0', `GlobalEnd = ${last}`
-        ].map((f) => `\t\t\t\t\t${f},`).join('\n');
-        const body =
-            toolBlock('Frame', 'Background', {
-                GlobalOut: last, Width: opts.width, Height: opts.height, UseFrameFormatSettings: 1,
-                TopLeftRed: 0, TopLeftGreen: 0, TopLeftBlue: 0, TopLeftAlpha: 0
-            }) +
-            `\t\tGuide = Loader {\n\t\t\tClips = {\n\t\t\t\tClip {\n${clip}\n\t\t\t\t},\n\t\t\t},\n` +
-            `\t\t\tInputs = {\n\t\t\t\t["Clip1.PNGFormat.PostMultiply"] = Input { Value = 1, },\n\t\t\t},\n\t\t},\n` +
-            `\t\tMerge1 = Merge {\n\t\t\tInputs = {\n\t\t\t\tBackground = Input { SourceOp = "Frame", Source = "Output", },\n` +
-            `\t\t\t\tForeground = Input { SourceOp = "Guide", Source = "Output", },\n` +
-            `\t\t\t\tSize = Input { Value = ${num(opts.width / (opts.imageWidth || 1080))}, },\n` +
-            `\t\t\t\tBlend = Input { Value = ${num(opts.opacity == null ? 0.4 : opts.opacity)}, },\n\t\t\t},\n\t\t},\n` +
-            `\t\tMediaOut1 = Saver {\n\t\t\tInputs = {\n\t\t\t\tIndex = Input { Value = "0", },\n\t\t\t\tInput = Input { SourceOp = "Merge1", Source = "Output", },\n\t\t\t},\n\t\t},\n`;
-        return `Composition {\n\tCurrentTime = 0,\n\tRenderRange = { 0, ${last} },\n\tGlobalRange = { 0, ${last} },\n\tTools = {\n${body}\t},\n}\n`;
+        const W = opts.width;
+        const H = opts.height;
+        const k = W / 1080;
+        const tools = [];
+        const merge = (name, bg, fg, extra) => `\t\t${name} = Merge {\n\t\t\tInputs = {\n` +
+            `\t\t\t\tBackground = Input { SourceOp = ${lua(bg)}, Source = "Output", },\n` +
+            `\t\t\t\tForeground = Input { SourceOp = ${lua(fg)}, Source = "Output", },\n` +
+            Object.entries(extra || {}).map(([key, v]) => `\t\t\t\t${key} = ${input(v)},\n`).join('') +
+            `\t\t\t},\n\t\t},\n`;
+        tools.push(toolBlock('Frame', 'Background', {
+            GlobalOut: last, Width: W, Height: H, UseFrameFormatSettings: 0,
+            TopLeftRed: 0, TopLeftGreen: 0, TopLeftBlue: 0, TopLeftAlpha: 0
+        }));
+        let prev = 'Frame';
+        MASK_ZONES.forEach((z, i) => {
+            const [x0, y0, x1, y1] = z.box.map((v) => v * k);
+            const w = Math.round(x1 - x0);
+            const h = Math.round(y1 - y0);
+            const [r, g, b] = rgb(z.color);
+            const zone = `Zone${i + 1}`;
+            const inputs = { GlobalOut: last, Width: w, Height: h, UseFrameFormatSettings: 0, TopLeftRed: r, TopLeftGreen: g, TopLeftBlue: b, TopLeftAlpha: 1 };
+            if (z.round) {
+                tools.push(toolBlock(`${zone}Shape`, 'EllipseMask', { MaskWidth: w, MaskHeight: h, PixelAspect: [1, 1], UseFrameFormatSettings: 0, Width: 1, Height: 1, Center: [0.5, 0.5] }));
+                tools.push(toolBlock(zone, 'Background', inputs).replace(/\n\t\t\t\},\n\t\t\},\n$/, `,\n\t\t\t\tEffectMask = Input { SourceOp = "${zone}Shape", Source = "Mask", }\n\t\t\t},\n\t\t},\n`));
+            } else {
+                tools.push(toolBlock(zone, 'Background', inputs));
+            }
+            // Merge centres are fractions of the frame, y up.
+            tools.push(merge(`Place${i + 1}`, prev, zone, { Center: [(x0 + x1) / 2 / W, 1 - (y0 + y1) / 2 / H] }));
+            prev = `Place${i + 1}`;
+        });
+        MASK_LABELS.forEach((l, i) => {
+            const [r, g, b] = rgb(l.color);
+            const label = `Label${i + 1}`;
+            tools.push(textTool(label, {
+                GlobalOut: last, Width: W, Height: H, UseFrameFormatSettings: 0, StyledText: l.text.replace(/\\n/g, '\n'),
+                Font: 'Montserrat', Style: 'Medium', Size: 0.075, Center: [l.at[0] * k / W, 1 - (l.at[1] * k) / H],
+                Red1: r, Green1: g, Blue1: b
+            }));
+            tools.push(merge(`Write${i + 1}`, prev, label));
+            prev = `Write${i + 1}`;
+        });
+        // The whole mask at its opacity, over a clear frame.
+        tools.push(toolBlock('Clear', 'Background', { GlobalOut: last, Width: W, Height: H, UseFrameFormatSettings: 0, TopLeftAlpha: 0 }));
+        tools.push(merge('Mask', 'Clear', prev, { Blend: opts.opacity == null ? 0.4 : opts.opacity }));
+        tools.push(`\t\tMediaOut1 = Saver {\n\t\t\tInputs = {\n\t\t\t\tIndex = Input { Value = "0", },\n\t\t\t\tInput = Input { SourceOp = "Mask", Source = "Output", },\n\t\t\t},\n\t\t},\n`);
+        return `Composition {\n\tCurrentTime = 0,\n\tRenderRange = { 0, ${last} },\n\tGlobalRange = { 0, ${last} },\n\tTools = {\n${tools.join('')}\t},\n}\n`;
     }
 
-    return { STYLES, build, fromTemplate, prepare, guide, lua };
+    return { STYLES, build, fromTemplate, prepare, guide, lua, fadeKeys, trackingStart };
 });

@@ -153,11 +153,21 @@
             }
             root.__mockPlaced = n;
             root.__mockLastDeliver = opts;
-            return { ok: true, data: { placed: n, track: 2 } };
+            return { ok: true, data: { placed: n, track: 2, ids: opts.clips.map((c, i) => `mock-${i}`), newTrack: opts.track === 'new', replaced: 0 } };
         },
         deliverTest: (opts) => wait(300).then(() => {
             root.__mockLastTest = opts;
             return { ok: true, data: { track: 2 } };
+        }),
+        // A tiny dictionary: the demo speech plus the words a real check would offer.
+        spellcheck: (texts, lang, userWords) => {
+            const base = 'fuimos 25657\nalquilamos 577\nalquilaremos 162\nalquilarlos 90\nwatching 73700\ncaptions 1057';
+            const dict = root.CapCore.spell.dictionary(base + '\n' + texts.map((x) => root.CapCore.spell.parts(x).core.toLowerCase() + ' 1000').filter((x) => !/fuiimos|alquilarmos|watchng/.test(x)).join('\n'));
+            return ok(root.CapCore.spell.check(texts.map((text) => ({ text })), dict, { lang, userWords }));
+        },
+        undoDelivery: (opts) => wait(300).then(() => {
+            root.__mockPlaced = 0;
+            return ok({ removed: opts.ids.length, missing: 0, trackRemoved: !!opts.newTrack });
         }),
         modify: async (opts) => {
             const n = opts.captions.length;

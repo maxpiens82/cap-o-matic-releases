@@ -1,0 +1,11 @@
+Cap-o-matic spell check word lists (es.txt.gz, en.txt.gz)
+
+Derived from FrequencyWords by Hermit Dave
+https://github.com/hermitdave/FrequencyWords
+built from the OpenSubtitles 2018 corpus (http://www.opensubtitles.org).
+
+Licensed under the Creative Commons Attribution-ShareAlike 4.0 International License
+(CC BY-SA 4.0): https://creativecommons.org/licenses/by-sa/4.0/
+
+Changes: kept word forms seen at least 5 times, letters and apostrophes only, as
+"word count" lines, gzip-compressed. These derived lists are shared under the same license.

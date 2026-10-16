@@ -10,13 +10,14 @@
     --text-strong: #f4f4f5;
     --muted: #a1a1aa;
     --muted-2: #8e8e96;
-    /* Brand red (RE! logo). Fills under white text use the slightly deeper --accent-strong
-       to keep 4.5:1 contrast; small text on dark uses the lighter --accent-text. */
-    --accent: #e53c13;
-    --accent-strong: #d23510;
-    --accent-text: #ff6a45;
-    --accent-tint: rgba(229, 60, 19, .18);
-    --accent-ink: #ffffff;
+    /* Accent: Cap-o-matic's HUD orange (docs/BRAND.md section 11; it replaced RE!'s red). Text on an orange
+       fill is dark (--accent-ink, 6.4:1 on --accent-strong); white fails on orange. Small text on dark uses
+       the lighter --accent-text. */
+    --accent: #ff8a1f;
+    --accent-strong: #eb7f1d;
+    --accent-text: #ffa14c;
+    --accent-tint: rgba(255, 138, 31, .18);
+    --accent-ink: #18181b;
     --ok: #4cc38a;
     --bad: #e5484d;
     --sans: "IBM Plex Sans", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
@@ -137,6 +138,18 @@ input[type=checkbox] { width: 15px; height: 15px; margin: 0; accent-color: var(-
 .line { display: flex; flex-wrap: wrap; align-items: center; }
 .word { border: 1px solid var(--line-2); background: var(--raised); color: var(--text); border-radius: 4px; padding: 3px 6px; margin: 0 4px 4px 0; font-size: 13px; line-height: 1.3; }
 .word:hover { border-color: #55555e; }
+/* Spell check marks: a close call to review, a fix made for you, the word under review. */
+.word.sp-unsure { text-decoration: underline wavy var(--bad); text-underline-offset: 3px; }
+.word.sp-fixed { text-decoration: underline dotted var(--ok); text-underline-offset: 3px; }
+.word.sp-on { box-shadow: 0 0 0 2px var(--accent); }
+/* Edit: title, modes, hint or brush, spelling bar stay at the top; only the captions scroll. */
+.ed-sticky { position: sticky; top: 0; z-index: 5; background: var(--bg); padding-bottom: 2px; border-bottom: 1px solid transparent; }
+.screen.scrolled .ed-sticky { border-bottom-color: var(--line); box-shadow: 0 8px 18px rgba(0, 0, 0, .45); }
+#capList .cap { scroll-margin-top: var(--ed-sticky-h, 0px); }
+.spell-bar { margin: 0 14px 10px; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--raised); }
+.sp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); }
+.sp-q { margin: 6px 0; font-size: 12.5px; color: var(--text); }
+.sp-choices { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .lb-mark { color: var(--muted-2); font-size: 12px; margin: 0 0 4px; }
 .field.spell { height: 30px; margin-bottom: 4px; font-size: 13px; }
 .nudge { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 2px 0 6px; }
@@ -154,14 +167,20 @@ input[type=checkbox] { width: 15px; height: 15px; margin: 0; accent-color: var(-
 .empty strong { display: block; color: var(--text); font-size: 14px; margin-bottom: 4px; }
 
 /* Deliver */
-.pv-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 14px 8px; }
+.pv-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 8px; padding: 0 14px 8px; }
 .pv-zone-pick { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .pv-zone-pick .field { width: auto; height: 26px; padding: 0 6px; }
-.stepper { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+.stepper { display: flex; align-items: center; gap: 4px; margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .stepper .icon-btn { width: 24px; height: 24px; font-size: 15px; }
 .mono { font-family: var(--mono); min-width: 54px; text-align: center; }
 .pv-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0 14px 4px; }
-.pv-warn { margin: 0; font-size: 12px; color: #f3a6a9; text-align: center; }
+/* The preview section (mask, caption stepper, frame) stays at the top while Deliver's settings
+   scroll underneath; the shadow appears only once something is under it. */
+.pv-sticky { position: sticky; top: 0; z-index: 5; padding: 8px 0 6px; background: var(--bg); border-bottom: 1px solid transparent; }
+.screen.scrolled .pv-sticky { border-bottom-color: var(--line); box-shadow: 0 8px 18px rgba(0, 0, 0, .45); }
+/* On the frame, so showing it moves nothing below. */
+.pv-warn { position: absolute; left: 0; right: 0; top: 0; z-index: 3; padding: 5px 7px; font-size: 11px; line-height: 1.35; color: #fff; text-align: center; background: rgba(150, 28, 32, .9); }
+.pv-frame.over { box-shadow: 0 0 0 2px var(--bad); }
 .pv-frame { position: relative; overflow: hidden; flex-shrink: 0; border-radius: 4px; background: #2a3038; box-shadow: 0 0 0 1px var(--line-2); }
 .pv-body { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); width: 46%; height: 40%; background: #343c46; border-radius: 48% 48% 0 0; }
 .pv-head { position: absolute; left: 50%; bottom: 37%; transform: translateX(-50%); width: 21%; aspect-ratio: 1; background: #3a434e; border-radius: 50%; }

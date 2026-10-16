@@ -174,7 +174,10 @@
                 out.textContent = e.target.value;
                 onInput(Number(e.target.value));
             },
-            onchange: () => onCommit && onCommit()
+            onchange: () => {
+                lookDragging = false;
+                if (onCommit) onCommit();
+            }
         });
         return h('div', { class: 'row slider' }, h('label', { class: 'lbl', for: id }, label), input, out);
     }
@@ -222,7 +225,7 @@
             onclick: () => go(key)
         }, icon(key), h('span', null, t('nav.' + key)));
         $('rail').setAttribute('aria-label', t('nav.steps'));
-        $('rail').replaceChildren(...STEPS.map(item), h('div', { class: 'spacer' }), item('settings'));
+        $('rail').replaceChildren(...STEPS.map(item), h('div', { class: 'spacer' }), item('presets'), item('settings'));
     }
 
     function primary(text, onclick, disabled) {
@@ -284,12 +287,14 @@
     }
 
     function renderScreen() {
-        const views = { style: viewStyle, transcribe: viewTranscribe, edit: viewEdit, deliver: viewDeliver, settings: viewSettings };
-        clearInterval(pvTimer);
+        const views = { style: viewStyle, transcribe: viewTranscribe, edit: viewEdit, deliver: viewDeliver, presets: () => h('div', null, viewPresets()), settings: viewSettings };
+        pvTimers.forEach(clearInterval);
+        pvTimers = [];
         const screen = $('screen');
         const top = screen.scrollTop;
         screen.replaceChildren(views[S.screen]());
         screen.scrollTop = top;
+        screen.classList.toggle('scrolled', screen.scrollTop > 0);
     }
 
     // ------------------------------------------------------------ Style
@@ -737,6 +742,94 @@
         S.data.builtAt = new Date().toISOString();
         saveData();
         go('edit');
+        spellPass();
+    }
+
+    // ------------------------------------------------------------ spell check
+
+    // After captions are built: clear misspellings fixed, close calls marked for review in Edit.
+    // Spanish and English (the bundled word lists); the transcript's language, else the panel's.
+    async function spellPass() {
+        if (!api.spellcheck || S.settings.spellCheck === false || !S.data.captions.length) return;
+        const lang = ((S.data.transcript && S.data.transcript.language) || S.settings.language || '').slice(0, 2);
+        if (!['es', 'en'].includes(lang)) return;
+        let res;
+        try {
+            res = await call('spellcheck', S.data.captions.flatMap((c) => c.words.map((w) => w.text)), lang, S.settings.userWords || []);
+        } catch (e) {
+            return;
+        }
+        if (!res) return;
+        const out = Core.edit.applySpell(S.data.captions, res);
+        if (!out.fixed && !out.unsure) return;
+        S.data.captions = out.caps;
+        S.spellIdx = 0;
+        saveData();
+        if (S.screen === 'edit') renderScreen();
+        flash(t('sp.summary', { fixed: out.fixed, unsure: out.unsure }));
+    }
+
+    function spellItems() {
+        const items = [];
+        S.data.captions.forEach((c, ci) => c.words.forEach((w, wi) => {
+            if (w.spell || w.fixedFrom != null) items.push({ ci, wi, w });
+        }));
+        return items;
+    }
+
+    // Adds a word to your own dictionary: it's never flagged again, here or in later checks.
+    function addToDictionary(word) {
+        const core = Core.spell.parts(word).core;
+        const key = core.toLocaleLowerCase();
+        const list = S.settings.userWords || (S.settings.userWords = []);
+        if (!list.includes(key)) list.push(key);
+        saveSettings();
+        const caps = S.data.captions.map((c) => Object.assign({}, c, {
+            words: c.words.map((w) => {
+                if (!w.spell || Core.spell.parts(w.text).core.toLocaleLowerCase() !== key) return w;
+                const next = Object.assign({}, w);
+                delete next.spell;
+                return next;
+            })
+        }));
+        commit(caps);
+    }
+
+    // The review bar in Edit: one marked word at a time, with what can be done about it.
+    function spellBar() {
+        const items = spellItems();
+        if (!items.length) return null;
+        const unsure = items.filter((x) => x.w.spell).length;
+        S.spellIdx = Math.min(Math.max(0, S.spellIdx || 0), items.length - 1);
+        const it = items[S.spellIdx];
+        const E = Core.edit;
+        const go = (d) => {
+            S.spellIdx = (S.spellIdx + d + items.length) % items.length;
+            renderScreen();
+        };
+        const body = it.w.spell
+            ? [h('p', { class: 'sp-q' }, t('sp.unsure', { word: it.w.text })),
+                h('div', { class: 'sp-choices' },
+                    it.w.spell.map((c) => h('button', { type: 'button', class: 'btn small primary', onclick: () => commit(E.replaceWord(S.data.captions, it.ci, it.wi, c)) }, c)),
+                    h('button', { type: 'button', class: 'btn small', onclick: () => commit(E.clearSpell(S.data.captions, it.ci, it.wi)) }, t('sp.keep', { word: it.w.text })),
+                    h('button', { type: 'button', class: 'linklike', onclick: () => addToDictionary(it.w.text) }, t('sp.add')))]
+            : [h('p', { class: 'sp-q' }, t('sp.fixed', { from: it.w.fixedFrom, to: it.w.text })),
+                h('div', { class: 'sp-choices' },
+                    h('button', { type: 'button', class: 'btn small', onclick: () => commit(E.clearSpell(S.data.captions, it.ci, it.wi)) }, t('sp.ok')),
+                    h('button', { type: 'button', class: 'btn small', onclick: () => commit(E.replaceWord(S.data.captions, it.ci, it.wi, it.w.fixedFrom)) }, t('sp.revert', { from: it.w.fixedFrom })))];
+        // Bring the word into view once drawn.
+        setTimeout(() => {
+            const row = document.querySelector(`#capList .cap[data-i="${it.ci}"]`);
+            if (row) row.scrollIntoView({ block: 'nearest' });
+        }, 0);
+        return h('div', { class: 'spell-bar' },
+            h('div', { class: 'sp-head' },
+                h('span', null, t('sp.title', { unsure, fixed: items.length - unsure })),
+                h('div', { class: 'stepper' },
+                    h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('de.prev'), onclick: () => go(-1) }, '‹'),
+                    h('span', { class: 'mono' }, `${S.spellIdx + 1} / ${items.length}`),
+                    h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('de.next'), onclick: () => go(1) }, '›'))),
+            body);
     }
 
     // ------------------------------------------------------------ Edit
@@ -794,7 +887,8 @@
         const E = Core.edit;
         const caps = S.data.captions;
         if (S.editMode === 'emph') commit(E.paint(caps, ci, wi, brush()));
-        else if (ev.shiftKey) commit(E.setLineBreak(caps, ci, wi));
+        // Line break mode (or Shift+click in Group): line 2 starts at this word; again for one line.
+        else if (S.editMode === 'break' || ev.shiftKey) commit(E.setLineBreak(caps, ci, wi));
         else commit(E.split(caps, ci, wi));
     }
 
@@ -811,7 +905,11 @@
             ? `color:${e.color};border-color:${e.color}99;background:${e.color}1f;font-weight:600;font-size:${Math.round(13 * (e.size || 1))}px;` +
               (e.font ? `font-family:'${e.font}',var(--sans);` : '')
             : null;
-        return h('button', { type: 'button', class: 'word', style, onclick: (ev) => wordClick(ev, ci, wi) }, w.text);
+        const items = (w.spell || w.fixedFrom != null) ? spellItems() : null;
+        const current = items && items[S.spellIdx || 0];
+        const cls = 'word' + (w.spell ? ' sp-unsure' : '') + (w.fixedFrom != null ? ' sp-fixed' : '') + (current && current.ci === ci && current.wi === wi ? ' sp-on' : '');
+        const title = w.spell ? t('sp.markUnsure', { choices: w.spell.join(', ') }) : w.fixedFrom != null ? t('sp.markFixed', { from: w.fixedFrom }) : null;
+        return h('button', { type: 'button', class: cls, style, title, onclick: (ev) => wordClick(ev, ci, wi) }, w.text);
     }
 
     function captionBody(c, i) {
@@ -901,20 +999,28 @@
         let panel;
         if (mode === 'emph') panel = brushPanel();
         else if (mode === 'spell') panel = h('p', { class: 'hint' }, t('ed.hintSpell'));
+        else if (mode === 'break') panel = h('p', { class: 'hint' }, t('ed.hintBreakMode'));
         else {
             panel = h('p', { class: 'hint' }, t('ed.hintGroup'),
                 S.settings.rules.lines === 2 || caps.some((c) => c.lineBreak != null) ? [' ', t('ed.hintBreak')] : null);
         }
-        return h('div', null,
+        // Everything above the captions stays put (every mode); only the caption list scrolls.
+        const top = h('div', { class: 'ed-sticky' },
             h('div', { class: 'section-row' }, section(t('ed.title', { n: caps.length })),
                 h('div', { class: 'tools' },
                     h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('ed.undo'), title: t('ed.undo'), disabled: !S.hist.past.length, onclick: undo }, icon('undo', 15)),
                     h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('ed.redo'), title: t('ed.redo'), disabled: !S.hist.future.length, onclick: redo }, icon('redo', 15)))),
-            h('div', { class: 'pad', style: 'margin-bottom:10px' }, seg([['group', t('ed.group')], ['spell', t('ed.spell')], ['emph', t('ed.emph')]], mode, (v) => {
+            h('div', { class: 'pad', style: 'margin-bottom:10px' }, seg([['group', t('ed.group')], ['spell', t('ed.spell')], ['emph', t('ed.emph')], ['break', t('ed.breakMode')]], mode, (v) => {
                 S.editMode = v;
                 renderScreen();
             }, t('ed.mode'))),
             panel,
+            spellBar());
+        // Rows scrolled into view (playhead, spelling review) stop below the pinned part.
+        queueMicrotask(() => {
+            if (top.isConnected) $('screen').style.setProperty('--ed-sticky-h', `${top.offsetHeight + 6}px`);
+        });
+        return h('div', null, top,
             h('div', { class: 'caps', id: 'capList' }, caps.map((c, i) => captionRow(c, i, caps.length))));
     }
 
@@ -1018,9 +1124,13 @@
         // Style settings (comp.js tuned): '' / null keep the style's own.
         accent: '', box: null, pop: true, dim: 45, outline: { on: false, color: '#000000', width: 0.08 },
         // Drop shadow through Text+'s shadow element. Distance and softness in pixels at 1080 wide.
-        shadow: { on: true, color: '#000000', opacity: 60, distance: 6, angle: 315, softness: 8 }
+        shadow: { on: true, color: '#000000', opacity: 60, distance: 6, angle: 315, softness: 8 },
+        // Motion (starter styles): fade in/out in frames to a rest opacity (%); tracking that opens
+        // up from `from`% letter spacing to normal over the first `over`% of each caption.
+        fade: { on: false, in: 4, out: 4, rest: 100 },
+        tracking: { on: false, from: 80, over: 100 }
     };
-    let pvTimer = null;
+    let pvTimers = [];
 
     // Always the same object, so code holding it across an await keeps writing to the live settings.
     function look() {
@@ -1047,6 +1157,8 @@
             shadow: L.shadow.on ? Object.assign({}, L.shadow) : null,
             accent: L.accent || undefined, box: L.box || undefined, pop: L.pop, dim: L.dim,
             outline: L.outline && L.outline.on ? Object.assign({}, L.outline) : undefined,
+            fade: L.fade.on ? Object.assign({}, L.fade) : undefined,
+            tracking: L.tracking.on ? Object.assign({}, L.tracking) : undefined,
             emphOverride: S.deliverMode === 'modify' && L.emphOn ? { color: L.emphColor, size: L.emphSize } : undefined
         };
     }
@@ -1071,7 +1183,55 @@
         renderFooter();
     }
 
-    function setLook(patch) {
+    // Deliver's own undo. Resolve doesn't record changes made through its scripting API, so its
+    // Ctrl+Z can't take back a look; the panel keeps the history (Ctrl+Z / Ctrl+Y on Deliver, and
+    // the buttons by Look). A step is everything a look is made of, as JSON; Live in viewer follows.
+    const lookHist = { past: [], future: [] };
+    let lookDragging = false;
+
+    function lookSnapshot() {
+        const L = Object.assign({}, look());
+        delete L.guide;
+        return JSON.stringify({ look: L, style: S.settings.style, rules: S.settings.rules, brush: S.settings.brush, preset: S.settings.preset || null });
+    }
+
+    function markLook() {
+        const snap = lookSnapshot();
+        if (lookHist.past[lookHist.past.length - 1] === snap) return;
+        lookHist.past.push(snap);
+        if (lookHist.past.length > 100) lookHist.past.shift();
+        lookHist.future = [];
+    }
+
+    function restoreLook(snap) {
+        const d = JSON.parse(snap);
+        const L = look();
+        const guide = L.guide;
+        for (const k of Object.keys(L)) delete L[k];
+        Object.assign(L, d.look, { guide });
+        Object.assign(S.settings, { style: d.style, rules: d.rules, brush: d.brush });
+        if (d.preset) S.settings.preset = d.preset;
+        else delete S.settings.preset;
+        saveSettings();
+        renderScreen();
+        renderFooter();
+    }
+
+    function lookUndo() {
+        if (!lookHist.past.length) return;
+        lookHist.future.push(lookSnapshot());
+        restoreLook(lookHist.past.pop());
+    }
+
+    function lookRedo() {
+        if (!lookHist.future.length) return;
+        lookHist.past.push(lookSnapshot());
+        restoreLook(lookHist.future.pop());
+    }
+
+    // noUndo: not a look change to take back (the safe-zone mask is in Resolve's viewer too).
+    function setLook(patch, noUndo) {
+        if (!noUndo) markLook();
         Object.assign(look(), patch);
         saveSettings();
         renderScreen();
@@ -1080,9 +1240,18 @@
 
     // While a slider is dragged: update the value and swap just the preview (saved on release).
     function livePreview(patch) {
+        if (!lookDragging) {
+            markLook();
+            lookDragging = true;
+        }
         Object.assign(look(), patch);
         const old = document.querySelector('.pv-wrap');
-        if (old) old.replaceWith(previewFrame());
+        if (old) {
+            clearInterval(old.pvTimer);
+            old.replaceWith(previewFrame());
+        }
+        // Sliders don't redraw the screen; Live in viewer follows once the drag pauses.
+        scheduleLive();
     }
 
     // Resolve's viewer shows the guide too while Guide is ticked, from the first visit to Deliver
@@ -1189,6 +1358,37 @@
         return { word, shade, line };
     }
 
+    // Fade and tracking on the preview caption, looping with its words (ms): the fades in the
+    // timeline's frames, the rest opacity held between them, and the letters easing open from
+    // `from`% (comp.js trackingStart: Text+ spacing 1 − (1 − from) × 0.25, which moves each letter
+    // about 1.43em per unit).
+    function motionPreview(el, L, ms) {
+        if (!el.animate) return;
+        const f = L.fade;
+        if (f && f.on) {
+            const frame = 1000 / fps();
+            let fin = f.in * frame;
+            let fout = f.out * frame;
+            if (fin + fout > ms) {
+                const k = ms / (fin + fout);
+                fin *= k;
+                fout *= k;
+            }
+            const rest = f.rest / 100;
+            el.animate([
+                { opacity: fin ? 0 : rest, offset: 0 }, { opacity: rest, offset: fin / ms },
+                { opacity: rest, offset: 1 - fout / ms }, { opacity: fout ? 0 : rest, offset: 1 }
+            ], { duration: ms, iterations: Infinity });
+        }
+        const tr = L.tracking;
+        if (tr && tr.on && tr.from < 100) {
+            el.animate([
+                { letterSpacing: `${((tr.from / 100 - 1) * 0.25 * 1.43).toFixed(3)}em`, offset: 0, easing: 'cubic-bezier(.5,1,.89,1)' },
+                { letterSpacing: '0em', offset: tr.over / 100 }, { letterSpacing: '0em', offset: 1 }
+            ], { duration: ms, iterations: Infinity });
+        }
+    }
+
     // The preview: the caption as it will sit in the frame, cycling through its words.
     function previewFrame() {
         const tl = timeline();
@@ -1235,12 +1435,13 @@
         });
         let active = 0;
         paint(active);
-        clearInterval(pvTimer);
+        let timer = null;
         if (spans.length > 1) {
-            pvTimer = setInterval(() => {
+            timer = setInterval(() => {
                 active = (active + 1) % spans.length;
                 paint(active);
             }, 550);
+            pvTimers.push(timer);
         }
         const content = [];
         spans.forEach((sp, k) => {
@@ -1252,10 +1453,11 @@
             class: 'pv-cap',
             style: `left:${L.x}%;top:${L.y}%;font-size:${capPx.toFixed(1)}px;`
         }, h('span', { style: lineCss }, content));
+        if (st) motionPreview(cap.firstChild, L, Math.max(1200, spans.length * 550));
         const guide = portrait && L.guide ? h('img', { class: 'pv-guide', src: 'assets/guide-9x16.png', alt: '' }) : null;
+        const warn = h('div', { class: 'pv-warn', role: 'alert', hidden: true }, t('de.overflow'));
         const frame = h('div', { class: 'pv-frame', style: `width:${fw}px;height:${fh}px` },
-            h('span', { class: 'pv-body', 'aria-hidden': 'true' }), h('span', { class: 'pv-head', 'aria-hidden': 'true' }), guide, cap);
-        const warn = h('p', { class: 'pv-warn', hidden: true }, t('de.overflow'));
+            h('span', { class: 'pv-body', 'aria-hidden': 'true' }), h('span', { class: 'pv-head', 'aria-hidden': 'true' }), guide, cap, warn);
         // Emphasized words keep their own colour, so a caption made only of them won't change.
         const allEmph = words.length && words.every((w) => w.emph);
         const emphNote = L.color && !bin && allEmph ? h('p', { class: 'hint', style: 'margin:0;text-align:center' }, t('de.emphKeepsColor')) : null;
@@ -1264,9 +1466,13 @@
             if (!frame.isConnected || kept) return;
             const f = frame.getBoundingClientRect();
             const c = cap.getBoundingClientRect();
-            warn.hidden = !(c.left < f.left - 1 || c.right > f.right + 1);
+            const over = c.left < f.left - 1 || c.right > f.right + 1;
+            warn.hidden = !over;
+            frame.classList.toggle('over', over);
         }, 30);
-        return h('div', { class: 'pv-wrap' }, frame, warn, emphNote);
+        const wrap = h('div', { class: 'pv-wrap' }, frame, emphNote);
+        wrap.pvTimer = timer;
+        return wrap;
     }
 
     // The track list once loaded; until then a spinner, or why it failed and a retry.
@@ -1288,6 +1494,17 @@
         return onlyOurs ? opts : [['new', t('de.newTrack')]].concat(opts);
     }
 
+    // A Deliver section heading with a Default button that puts just that section's settings back
+    // to DEFAULT_LOOK (one undo step); greyed out while they already are.
+    const LOOK_KEYS = ['keepTemplate', 'font', 'fontStyle', 'color', 'size', 'x', 'y', 'caseMode', 'strip'];
+    function resetSection(title, keys) {
+        const L = look();
+        const defaults = Object.fromEntries(keys.map((k) => [k, k in DEFAULT_LOOK ? JSON.parse(JSON.stringify(DEFAULT_LOOK[k])) : '']));
+        const same = keys.every((k) => JSON.stringify(L[k] == null ? '' : L[k]) === JSON.stringify(defaults[k]));
+        return h('div', { class: 'section-row' }, section(title),
+            h('button', { type: 'button', class: 'btn small ghost', disabled: same, title: t('de.resetTitle', { section: title }), onclick: () => setLook(defaults) }, t('de.reset')));
+    }
+
     function lookControls() {
         const L = look();
         const ref = styleRef();
@@ -1296,7 +1513,7 @@
         const bin = ref.source === 'bin';
         const kept = bin && L.keepTemplate;
         return [
-            section(t('de.look')),
+            resetSection(t('de.look'), LOOK_KEYS),
             h('div', { class: 'row' }, h('label', { class: 'lbl', for: 'lkPreset' }, t('de.preset')),
                 select('lkPreset', [['', t('de.presetPick')]]
                     .concat(saved.length ? [{ group: t('se.yourPresets'), options: saved.map((p, i) => [`u${i}`, p.name]) }] : [])
@@ -1323,7 +1540,7 @@
             h('div', { class: 'row top-align' }, h('span', { class: 'lbl', style: 'padding-top:6px' }, t('de.strip')),
                 h('div', { class: 'chips', role: 'group', 'aria-label': t('de.strip') }, stripChips(L))),
             styleSettings(L, ref),
-            section(t('de.shadow')),
+            resetSection(t('de.shadow'), ['shadow']),
             checkbox('shadowOn', t('de.shadowOn'), L.shadow.on, (v) => setLook({ shadow: Object.assign({}, L.shadow, { on: v }) })),
             L.shadow.on ? [
                 h('div', { class: 'row' }, h('span', { class: 'lbl' }, t('ed.color')),
@@ -1332,6 +1549,28 @@
                 slider('shDistance', t('de.distance'), 0, 40, 1, L.shadow.distance, (v) => livePreview({ shadow: Object.assign(L.shadow, { distance: v }) }), saveSettings),
                 slider('shAngle', t('de.angle'), 0, 359, 1, L.shadow.angle, (v) => livePreview({ shadow: Object.assign(L.shadow, { angle: v }) }), saveSettings),
                 slider('shSoftness', t('de.softness'), 0, 40, 1, L.shadow.softness, (v) => livePreview({ shadow: Object.assign(L.shadow, { softness: v }) }), saveSettings)
+            ] : null,
+            motionSettings(L, ref)
+        ];
+    }
+
+    // Fade and tracking, built into the starter styles' comps (a bin template keeps its own motion).
+    function motionSettings(L, ref) {
+        if (ref.source !== 'pack') return null;
+        const f = L.fade;
+        const tr = L.tracking;
+        return [
+            resetSection(t('de.motion'), ['fade', 'tracking']),
+            checkbox('fadeOn', t('de.fadeOn'), f.on, (v) => setLook({ fade: Object.assign({}, f, { on: v }) })),
+            f.on ? [
+                slider('lkFadeIn', t('de.fadeIn'), 0, 30, 1, f.in, (v) => livePreview({ fade: Object.assign(f, { in: v }) }), saveSettings),
+                slider('lkFadeOut', t('de.fadeOut'), 0, 30, 1, f.out, (v) => livePreview({ fade: Object.assign(f, { out: v }) }), saveSettings),
+                slider('lkRest', t('de.rest'), 10, 100, 1, f.rest, (v) => livePreview({ fade: Object.assign(f, { rest: v }) }), saveSettings)
+            ] : null,
+            checkbox('trackOn', t('de.trackOn'), tr.on, (v) => setLook({ tracking: Object.assign({}, tr, { on: v }) })),
+            tr.on ? [
+                slider('lkTrackFrom', t('de.trackFrom'), 50, 100, 1, tr.from, (v) => livePreview({ tracking: Object.assign(tr, { from: v }) }), saveSettings),
+                slider('lkTrackOver', t('de.trackOver'), 10, 100, 1, tr.over, (v) => livePreview({ tracking: Object.assign(tr, { over: v }) }), saveSettings)
             ] : null
         ];
     }
@@ -1350,7 +1589,7 @@
         const o = L.outline;
         const setBox = (patch) => setLook({ box: Object.assign({ color: id === 'plain' ? '#000000' : '#111111', opacity: 100 }, L.box || {}, patch) });
         return [
-            section(t('de.styleSettings')),
+            resetSection(t('de.styleSettings'), ['accent', 'box', 'pop', 'dim', 'outline']),
             accent ? h('div', { class: 'row' }, h('span', { class: 'lbl' }, t('de.accent')),
                 colorSwatches(ACCENT_COLORS, L.accent, (col) => setLook({ accent: col }), t('de.accent'), true)) : null,
             id === 'pop' ? checkbox('popOn', t('de.popOn'), L.pop !== false, (v) => setLook({ pop: v })) : null,
@@ -1420,6 +1659,8 @@
         const tl = timeline();
         const portrait = tl && tl.height > tl.width;
 
+        // The preview keeps its place in the page (slot); once scrolled past, it moves into a band
+        // stuck to the top of the screen, smaller, so it stays in sight while you change settings.
         const head = [
             h('div', { class: 'pad', style: 'margin:14px 0 10px' }, seg([['create', t('de.create')], ['modify', t('de.modify')]], S.deliverMode, (v) => {
                 S.deliverMode = v;
@@ -1427,12 +1668,13 @@
                 renderScreen();
                 renderFooter();
             }, t('de.mode'))),
-            h('div', { class: 'pv-tools' },
+            // The preview section stays at the top while the settings scroll underneath it.
+            h('div', { class: 'pv-sticky' }, h('div', { class: 'pv-tools' },
                 portrait
                     ? h('label', { class: 'pv-zone-pick', title: t('de.guideTitle') },
                         h('input', { type: 'checkbox', checked: !!L.guide, onchange: (e) => {
                             if (!e.target.checked) S.renderWarn = false;
-                            setLook({ guide: e.target.checked });
+                            setLook({ guide: e.target.checked }, true);
                             syncGuide(true);
                         } }), t('de.guide'))
                     : h('span'),
@@ -1443,6 +1685,10 @@
                     h('button', { type: 'button', class: 'linklike', style: 'margin-left:6px', onclick: () => { S.pvIdx = Core.timing.worstCase(caps); renderScreen(); } }, t('de.longest')))),
             S.renderWarn && L.guide ? note(t('de.guideRender'), 'err') : null,
             previewFrame(),
+            // Test and Live belong with the preview: what you see here, in Resolve's viewer.
+            modify ? null : h('div', { class: 'pad', style: 'margin-top:8px' },
+                h('button', { type: 'button', class: 'btn block', disabled: !!S.busy, onclick: testCaption, title: t('de.testTitle') }, t('de.test'))),
+            modify ? null : h('div', { title: t('de.liveTitle') }, checkbox('liveView', t('de.live'), !!S.live, (v) => toggleLive(v)))),
             styleRef().source === 'bin' ? h('p', { class: 'hint', style: 'margin-top:6px' }, t('de.binPreview')) : null
         ];
 
@@ -1466,7 +1712,7 @@
                         renderScreen();
                     })),
                 lookControls(),
-                section(t('ed.emph')),
+                resetSection(t('ed.emph'), ['emphOn', 'emphColor', 'emphSize']),
                 checkbox('emphOn', t('de.recolor'), L.emphOn, (v) => setLook({ emphOn: v })),
                 L.emphOn ? h('div', { class: 'row' }, h('span', { class: 'lbl' }, t('ed.color')),
                     h('div', { class: 'swatches' }, EMPH_COLORS.map((col) => h('button', {
@@ -1478,21 +1724,21 @@
                 h('p', { class: 'hint', style: 'margin-top:10px' }, t('de.modifyHint')));
         }
 
+        scheduleLive();
         return h('div', null, head,
-            h('div', { class: 'pad', style: 'margin-top:10px' },
-                h('button', { type: 'button', class: 'btn block', disabled: !!S.busy, onclick: testCaption, title: t('de.testTitle') }, t('de.test'))),
             section(t('de.placement')),
+            lastDeliveryRow(),
             h('div', { class: 'row' }, h('label', { class: 'lbl', for: 'track' }, t('de.track')),
                 trackSlot(() => select('track', trackOptions(false), deliverTrack(), (v) => setDeliverTrack(v === 'new' ? 'new' : Number(v))))),
             lookControls(),
-            section(t('de.timing')),
+            resetSection(t('de.timing'), ['fillGaps', 'maxGap', 'minFrames']),
             checkbox('fillGaps', t('de.fillGaps'), L.fillGaps, (v) => setLook({ fillGaps: v }), [
                 h('input', { type: 'number', class: 'field small', min: '0', max: '120', value: String(L.maxGap), 'aria-label': t('de.fillGapsFrames'), onchange: (e) => setLook({ maxGap: Math.max(0, Number(e.target.value) || 0) }) }),
                 h('span', null, t('de.frames'))]),
             h('div', { class: 'check' }, h('label', { for: 'minFrames' }, t('de.minDur')),
                 h('input', { id: 'minFrames', type: 'number', class: 'field small', min: '1', max: '120', value: String(L.minFrames), onchange: (e) => setLook({ minFrames: Math.max(1, Number(e.target.value) || 1) }) }),
                 h('span', null, t('de.frames'))),
-            section(t('de.finish')),
+            resetSection(t('de.finish'), ['clipColor']),
             h('div', { class: 'row' }, h('label', { class: 'lbl', for: 'clipColor' }, t('de.clipColor')),
                 select('clipColor', CLIP_COLORS.map((c) => [c, c ? t('color.' + c) : t('de.noColor')]), L.clipColor, (v) => setLook({ clipColor: v }))));
     }
@@ -1547,7 +1793,12 @@
             if (res.cancelled) flash(t('de.cancelled'));
             else {
                 S.data.track = res.track;
-                S.data.delivered = { track: res.track, count: res.placed, at: new Date().toISOString(), style: S.settings.style };
+                // What Undo last delivery takes back: exactly these clips (Resolve's undo can't).
+                S.data.delivered = {
+                    track: res.track, count: res.placed, at: new Date().toISOString(), style: S.settings.style,
+                    ids: res.ids || [], newTrack: !!res.newTrack, replaced: res.replaced || 0, timelineId: S.key ? S.key.split('|')[1] : null
+                };
+                S.undoAsk = false;
                 saveData();
                 flash(t('de.done', { n: res.placed, track: res.track }));
             }
@@ -1555,6 +1806,60 @@
             flash(e.message, true);
         } finally {
             endProgress();
+            loadTracks();
+        }
+    }
+
+    // The last delivery on this timeline, with Undo (asks first, in place).
+    function lastDeliveryRow() {
+        const d = S.data.delivered;
+        if (!d || !d.ids || !d.ids.length) return null;
+        let time = '';
+        try {
+            time = new Date(d.at).toLocaleTimeString(S.settings.language === 'es' ? 'es' : 'en', { hour: '2-digit', minute: '2-digit' });
+        } catch (e) {
+            // no time then
+        }
+        if (!S.undoAsk) {
+            return h('div', { class: 'row' },
+                h('span', { class: 'lbl', style: 'flex:1;width:auto' }, t('de.lastDelivery', { n: d.ids.length, track: d.track, time })),
+                h('button', { type: 'button', class: 'btn small', title: t('de.undoDeliveryTitle'), disabled: !!S.busy, onclick: () => {
+                    S.undoAsk = true;
+                    renderScreen();
+                } }, t('de.undoDelivery')));
+        }
+        return h('div', { class: 'pad stack', style: 'margin-bottom:8px' },
+            note(t('de.undoAsk', { n: d.ids.length, track: d.track }) + (d.replaced ? ' ' + t('de.undoReplaced', { n: d.replaced }) : '')),
+            h('div', { style: 'display:flex;gap:8px' },
+                h('button', { type: 'button', class: 'btn danger', disabled: !!S.busy, onclick: undoDelivery }, t('de.undoYes')),
+                h('button', { type: 'button', class: 'btn', onclick: () => {
+                    S.undoAsk = false;
+                    renderScreen();
+                } }, t('de.cancel'))));
+    }
+
+    async function undoDelivery() {
+        const d = S.data.delivered;
+        S.undoAsk = false;
+        S.busy = { since: Date.now() };
+        renderFooter();
+        try {
+            const res = await call('undoDelivery', { track: d.track, ids: d.ids, newTrack: d.newTrack, timelineId: d.timelineId });
+            delete S.data.delivered;
+            if (res.trackRemoved && S.data.track === d.track) S.data.track = null;
+            saveData();
+            flash(t(res.trackRemoved ? 'de.undoneTrack' : 'de.undone', { n: res.removed, track: d.track }));
+        } catch (e) {
+            // Gone already (deleted by hand): nothing left to take back.
+            if (e.message === t('err.undoGone')) {
+                delete S.data.delivered;
+                saveData();
+            }
+            flash(e.message, true);
+        } finally {
+            S.busy = null;
+            renderScreen();
+            renderFooter();
             loadTracks();
         }
     }
@@ -1623,6 +1928,67 @@
         }
     }
 
+    // Live in viewer: the caption at Resolve's playhead follows the look. Every Deliver redraw asks
+    // for an update; it goes out 0.4 s after the last one, only if something it shows changed
+    // (liveKey), and never two at once. Off whenever the panel opens.
+    let liveTimer = null;
+    let liveBusy = false;
+    let liveKey = null;
+
+    async function toggleLive(on) {
+        if (on && !(await fontsOk())) {
+            renderScreen();
+            return;
+        }
+        S.live = on;
+        liveKey = null;
+        if (on) {
+            flash(t('de.liveOn'));
+            scheduleLive(0);
+        } else {
+            clearTimeout(liveTimer);
+            flash(t('de.liveOff'));
+        }
+    }
+
+    function scheduleLive(delay) {
+        if (!S.live) return;
+        clearTimeout(liveTimer);
+        liveTimer = setTimeout(runLive, delay == null ? 400 : delay);
+    }
+
+    async function runLive() {
+        if (!S.live || S.screen !== 'deliver' || S.deliverMode === 'modify' || !S.data.captions.length || !S.connected) return;
+        if (liveBusy || S.busy) {
+            scheduleLive();
+            return;
+        }
+        const i = Math.min(S.pvIdx || 0, S.data.captions.length - 1);
+        const track = deliverTrack();
+        const opts = { caption: S.data.captions[i], clip: finalClips()[i], look: compLook(), styleRef: S.settings.style, track };
+        const key = JSON.stringify(opts);
+        if (key === liveKey) return;
+        liveBusy = true;
+        try {
+            const res = await call('deliverTest', opts);
+            liveKey = key;
+            if (track === 'new') {
+                // Later updates go to the track it made, not a new one each time.
+                S.data.track = res.track;
+                saveData();
+                liveKey = null;
+                loadTracks();
+            }
+        } catch (e) {
+            // Something Resolve won't do (clips at the playhead, a template gone): stop, and say why.
+            S.live = false;
+            flash(e.message, true);
+            if (S.screen === 'deliver') renderScreen();
+        } finally {
+            liveBusy = false;
+        }
+    }
+
     // ------------------------------------------------------------ Settings, presets
 
     function presetList() {
@@ -1631,11 +1997,17 @@
             setTimeout(async () => {
                 try {
                     S.presets = await call('presets');
+                    // Your saved presets from before 0.2.3: same one-time conversion as the settings.
+                    const migrated = S.presets.map((p) => {
+                        const rules = Core.presets.migrateRules(p.rules);
+                        return rules === p.rules ? p : Object.assign({}, p, { rules });
+                    });
+                    if (migrated.some((p, i) => p !== S.presets[i])) savePresetList(migrated);
                 } catch (e) {
                     S.presets = [];
                     flash(e.message, true);
                 }
-                if (S.screen === 'settings' || S.screen === 'deliver') renderScreen();
+                if (S.screen === 'presets' || S.screen === 'deliver') renderScreen();
             }, 0);
         }
         return S.presets || [];
@@ -1650,6 +2022,7 @@
     // A preset's fonts that aren't on this computer fall back to the style default (caption font)
     // or the caption's own font (brush), with a warning; a style the family lacks goes back to auto.
     async function applyPreset(p) {
+        markLook();
         ensureFamilies();
         if (S.families === null && api.fontFamilies) {
             try {
@@ -1901,7 +2274,6 @@
 
     function viewSettings() {
         return h('div', null,
-            viewPresets(),
             section(t('se.panel')),
             h('div', { class: 'row' }, h('span', { class: 'lbl' }, t('se.language')),
                 seg([['en', 'English'], ['es', 'Español']], S.settings.language === 'es' ? 'es' : 'en', (v) => {
@@ -1916,6 +2288,10 @@
             }),
             checkbox('dedupe', t('se.dedupe'), S.settings.dedupeTemplates !== false, (v) => {
                 S.settings.dedupeTemplates = v;
+                saveSettings();
+            }),
+            checkbox('spellCheck', t('se.spellCheck'), S.settings.spellCheck !== false, (v) => {
+                S.settings.spellCheck = v;
                 saveSettings();
             }),
             section(t('se.guide')),
@@ -1938,6 +2314,12 @@
             S.settings = { language: 'en', style: { source: 'pack', id: 'highlight' }, rules: Object.assign({}, Core.phrases.DEFAULT_RULES) };
         }
         window.i18n.setLanguage(S.settings.language);
+        // Saved phrase rules from before 0.2.3: max words becomes per line (presets.migrateRules).
+        const rules = Core.presets.migrateRules(S.settings.rules);
+        if (rules && rules !== S.settings.rules) {
+            S.settings.rules = rules;
+            saveSettings();
+        }
         try {
             S.appInfo = await call('appInfo');
         } catch (e) {
@@ -1949,6 +2331,8 @@
         const wco = navigator.windowControlsOverlay;
         if (!api.isMock && !(wco && wco.visible)) document.body.classList.add('native-titlebar');
         $('connBtn').addEventListener('click', () => refresh(false));
+        // Deliver's sticky preview gets its shadow once settings scroll under it.
+        $('screen').addEventListener('scroll', () => $('screen').classList.toggle('scrolled', $('screen').scrollTop > 0), { passive: true });
         $('pinBtn').addEventListener('click', () => {
             S.settings.onTop = S.settings.onTop === false;
             saveSettings();
@@ -1957,10 +2341,14 @@
         });
         window.addEventListener('focus', () => refresh(true));
         document.addEventListener('keydown', (e) => {
-            if (S.screen !== 'edit' || !e.ctrlKey || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+            if (!e.ctrlKey || (S.screen !== 'edit' && S.screen !== 'deliver')) return;
+            const tg = e.target;
+            const typing = /^(SELECT|TEXTAREA)$/.test(tg.tagName) || (tg.tagName === 'INPUT' && !/^(range|checkbox|radio|button|color)$/.test(tg.type));
+            if (typing) return;
             const key = e.key.toLowerCase();
-            if (key === 'z' && !e.shiftKey) undo();
-            else if (key === 'y' || (key === 'z' && e.shiftKey)) redo();
+            const deliver = S.screen === 'deliver';
+            if (key === 'z' && !e.shiftKey) (deliver ? lookUndo : undo)();
+            else if (key === 'y' || (key === 'z' && e.shiftKey)) (deliver ? lookRedo : redo)();
             else return;
             e.preventDefault();
         });
