@@ -9,7 +9,7 @@
             downloads: 'Downloads', restarting: 'Restarting Resolve…',
             endTitle: "That's the whole workflow.",
             endText: 'Download Cap-o-matic, drop it on the Console, and caption your next video.',
-            download: 'Download the latest version', needs: 'Free · Windows · DaVinci Resolve Studio',
+            download: 'Download the latest version', needs: 'Free · Pro coming soon · Windows · DaVinci Resolve Studio',
             back: 'Previous step', next: 'Next step', play: 'Play', pause: 'Pause', count: 'Step {n} of {total}',
             console: [
                 '[Cap-o-matic] Cap-o-matic 0.2.1 is installed.',
@@ -32,7 +32,7 @@
             downloads: 'Descargas', restarting: 'Reiniciando Resolve…',
             endTitle: 'Ese es todo el flujo.',
             endText: 'Descargá Cap-o-matic, soltalo en la consola y subtitulá tu próximo video.',
-            download: 'Descargá la última versión', needs: 'Gratis · Windows · DaVinci Resolve Studio',
+            download: 'Descargá la última versión', needs: 'Gratis · Pro muy pronto · Windows · DaVinci Resolve Studio',
             back: 'Paso anterior', next: 'Paso siguiente', play: 'Reproducir', pause: 'Pausa', count: 'Paso {n} de {total}',
             console: [
                 '[Cap-o-matic] Cap-o-matic 0.2.1 está instalado.',

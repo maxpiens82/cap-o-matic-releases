@@ -570,29 +570,32 @@
 
     // ------------------------------------------------------------ viewer guide
 
-    // A full-length overlay for Resolve's viewer: the guide PNG through a Loader (written into the
-    // file, because comp.AddTool("Loader") opens a modal file dialog), held for the whole clip,
-    // scaled to the timeline width and merged at `opacity` over a transparent frame.
-    // opts: { file, width, height, duration, opacity (0–1), imageWidth (px, default 1080) }
     // The safe-zone mask for 9:16 timelines, drawn in Fusion: coloured zones and labels where the
-    // short-form apps put their buttons and text (the same layout as assets/guide-9x16.png, which
-    // the panel's preview uses). No image file: a Loader in a comp makes Resolve add the file to the
-    // Media Pool every time, so the mask used to leave copies behind. Layout in pixels at 1080×1920
-    // (left, top, right, bottom), scaled to the timeline's width.
+    // short-form apps put their buttons and text, held for the whole clip and merged at `opacity`
+    // over a transparent frame. No image file: a Loader in a comp makes Resolve add the file to the
+    // Media Pool every time, so the mask used to leave copies behind. The panel's preview draws the
+    // same zones (assets/guide-9x16.svg, written from these by tools/make-brand.js).
+    // opts: { width, height, duration, opacity (0–1) }
+    // Layout in pixels at 1080×1920 (left, top, right, bottom), scaled to the timeline's width.
+    // Colours (docs/BRAND.md section 11, 2026-10-16): blocked areas in ENNEA's ink, secondary text in
+    // its Night blue, the centre of attention in paper, the subtitle zone in Cap-o-matic's HUD orange.
+    // `opacity` is each zone's share of the mask's own: the blocked areas full (ink at the mask's 70 %
+    // darkens the video clearly; at 40 % it vanished on footage, owner 2026-10-16), the others 0.55,
+    // about 40 % in the viewer, so the shot shows through them. Labels are drawn at the full mask opacity.
     const MASK_ZONES = [
-        { box: [0, 0, 1080, 208], color: '#FFB0B0' },
-        { box: [913, 662, 1080, 1480], color: '#FFB0B0' },
-        { box: [0, 1480, 1080, 1920], color: '#FFB0B0' },
-        { box: [107, 276, 973, 385], color: '#FFFFAA' },
-        { box: [246, 429, 834, 1017], color: '#C9F7AF', round: true },
-        { box: [257, 1069, 823, 1398], color: '#AFAFFF' }
+        { box: [0, 0, 1080, 208], color: '#18181B', opacity: 1 },
+        { box: [913, 662, 1080, 1480], color: '#18181B', opacity: 1 },
+        { box: [0, 1480, 1080, 1920], color: '#18181B', opacity: 1 },
+        { box: [107, 276, 973, 385], color: '#9DB4E0', opacity: 0.55 },
+        { box: [246, 429, 834, 1017], color: '#F4F4F5', opacity: 0.55, round: true },
+        { box: [257, 1069, 823, 1398], color: '#FF8A1F', opacity: 0.55 }
     ];
     const MASK_LABELS = [
-        { text: 'BLOCKED', at: [540, 105], color: '#6A4C4C' },
-        { text: 'SECONDARY TEXT', at: [540, 331], color: '#5E5E3A' },
-        { text: 'CENTER OF\nATTENTION', at: [540, 723], color: '#546B4A' },
-        { text: 'SUBTITLES', at: [540, 1230], color: '#4E4E72' },
-        { text: 'BLOCKED', at: [540, 1700], color: '#6A4C4C' }
+        { text: 'BLOCKED', at: [540, 105], color: '#A1A1AA' },
+        { text: 'SECONDARY TEXT', at: [540, 331], color: '#2B3E6B' },
+        { text: 'CENTER OF\nATTENTION', at: [540, 723], color: '#52525B' },
+        { text: 'SUBTITLES', at: [540, 1230], color: '#18181B' },
+        { text: 'BLOCKED', at: [540, 1700], color: '#A1A1AA' }
     ];
 
     function guide(opts) {
@@ -625,7 +628,9 @@
                 tools.push(toolBlock(zone, 'Background', inputs));
             }
             // Merge centres are fractions of the frame, y up.
-            tools.push(merge(`Place${i + 1}`, prev, zone, { Center: [(x0 + x1) / 2 / W, 1 - (y0 + y1) / 2 / H] }));
+            const place = { Center: [(x0 + x1) / 2 / W, 1 - (y0 + y1) / 2 / H] };
+            if (z.opacity < 1) place.Blend = z.opacity;
+            tools.push(merge(`Place${i + 1}`, prev, zone, place));
             prev = `Place${i + 1}`;
         });
         MASK_LABELS.forEach((l, i) => {
@@ -641,10 +646,10 @@
         });
         // The whole mask at its opacity, over a clear frame.
         tools.push(toolBlock('Clear', 'Background', { GlobalOut: last, Width: W, Height: H, UseFrameFormatSettings: 0, TopLeftAlpha: 0 }));
-        tools.push(merge('Mask', 'Clear', prev, { Blend: opts.opacity == null ? 0.4 : opts.opacity }));
+        tools.push(merge('Mask', 'Clear', prev, { Blend: opts.opacity == null ? 0.7 : opts.opacity }));
         tools.push(`\t\tMediaOut1 = Saver {\n\t\t\tInputs = {\n\t\t\t\tIndex = Input { Value = "0", },\n\t\t\t\tInput = Input { SourceOp = "Mask", Source = "Output", },\n\t\t\t},\n\t\t},\n`);
         return `Composition {\n\tCurrentTime = 0,\n\tRenderRange = { 0, ${last} },\n\tGlobalRange = { 0, ${last} },\n\tTools = {\n${tools.join('')}\t},\n}\n`;
     }
 
-    return { STYLES, build, fromTemplate, prepare, guide, lua, fadeKeys, trackingStart };
+    return { STYLES, build, fromTemplate, prepare, guide, lua, fadeKeys, trackingStart, MASK_ZONES, MASK_LABELS };
 });

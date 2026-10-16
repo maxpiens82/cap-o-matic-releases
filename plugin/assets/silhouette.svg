@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="54 44 236 718" width="236" height="718">
+  <!-- The stand-in person in the Deliver preview: the pictogram the owner supplied (2026-10-16),
+       rebuilt from its measurements: a round head, a torso with large rounded top corners and small
+       bottom ones, tapered legs with rounded feet. The panel shows it whole, its head top at 27 % of
+       the frame (css .pv-figure). -->
+  <g fill="#38404b">
+    <circle cx="172" cy="108.6" r="64.3"/>
+    <path d="M144 193 L200 193 A90 90 0 0 1 290 283 L290 445 A42 42 0 0 1 248 487 L96 487 A42 42 0 0 1 54 445 L54 283 A90 90 0 0 1 144 193 Z"/>
+    <path d="M96 486 L248 486 L222.6 753.1 A8 8 0 0 1 214.6 761 L129.4 761 A8 8 0 0 1 121.4 753.1 Z"/>
+  </g>
+</svg>

@@ -1119,7 +1119,7 @@
     const DEFAULT_LOOK = {
         // y 64 centres the caption in the guide's SUBTITLES area.
         size: 75, x: 50, y: 64, font: '', color: '', caseMode: 'as', strip: { '.': true, ',': true },
-        fillGaps: true, maxGap: 12, minFrames: 8, clipColor: 'Orange', keepTemplate: true, guide: true,
+        fillGaps: true, maxGap: 12, minFrames: 15, clipColor: 'Orange', keepTemplate: true, guide: true,
         emphOn: false, emphColor: '#FFD93B', emphSize: 1.15,
         // Style settings (comp.js tuned): '' / null keep the style's own.
         accent: '', box: null, pop: true, dim: 45, outline: { on: false, color: '#000000', width: 0.08 },
@@ -1454,10 +1454,10 @@
             style: `left:${L.x}%;top:${L.y}%;font-size:${capPx.toFixed(1)}px;`
         }, h('span', { style: lineCss }, content));
         if (st) motionPreview(cap.firstChild, L, Math.max(1200, spans.length * 550));
-        const guide = portrait && L.guide ? h('img', { class: 'pv-guide', src: 'assets/guide-9x16.png', alt: '' }) : null;
+        const guide = portrait && L.guide ? h('img', { class: 'pv-guide', src: 'assets/guide-9x16.svg', alt: '' }) : null;
         const warn = h('div', { class: 'pv-warn', role: 'alert', hidden: true }, t('de.overflow'));
         const frame = h('div', { class: 'pv-frame', style: `width:${fw}px;height:${fh}px` },
-            h('span', { class: 'pv-body', 'aria-hidden': 'true' }), h('span', { class: 'pv-head', 'aria-hidden': 'true' }), guide, cap, warn);
+            h('img', { class: 'pv-figure', src: 'assets/silhouette.svg', alt: '' }), guide, cap, warn);
         // Emphasized words keep their own colour, so a caption made only of them won't change.
         const allEmph = words.length && words.every((w) => w.emph);
         const emphNote = L.color && !bin && allEmph ? h('p', { class: 'hint', style: 'margin:0;text-align:center' }, t('de.emphKeepsColor')) : null;
@@ -1494,7 +1494,7 @@
         return onlyOurs ? opts : [['new', t('de.newTrack')]].concat(opts);
     }
 
-    // A Deliver section heading with a Default button that puts just that section's settings back
+    // A Deliver section heading with a reset button that puts just that section's settings back
     // to DEFAULT_LOOK (one undo step); greyed out while they already are.
     const LOOK_KEYS = ['keepTemplate', 'font', 'fontStyle', 'color', 'size', 'x', 'y', 'caseMode', 'strip'];
     function resetSection(title, keys) {
@@ -1502,7 +1502,8 @@
         const defaults = Object.fromEntries(keys.map((k) => [k, k in DEFAULT_LOOK ? JSON.parse(JSON.stringify(DEFAULT_LOOK[k])) : '']));
         const same = keys.every((k) => JSON.stringify(L[k] == null ? '' : L[k]) === JSON.stringify(defaults[k]));
         return h('div', { class: 'section-row' }, section(title),
-            h('button', { type: 'button', class: 'btn small ghost', disabled: same, title: t('de.resetTitle', { section: title }), onclick: () => setLook(defaults) }, t('de.reset')));
+            // A reset arrow like the one on Resolve's Inspector sections.
+            h('button', { type: 'button', class: 'icon-btn reset', disabled: same, title: t('de.resetTitle', { section: title }), 'aria-label': t('de.resetTitle', { section: title }), onclick: () => setLook(defaults) }, icon('reset', 16)));
     }
 
     function lookControls() {
@@ -1575,7 +1576,8 @@
         ];
     }
 
-    const ACCENT_COLORS = ['', '#FFFFFF', '#FFD93B', '#2EE86B', '#7CF29A', '#FF6B3D', '#FF3EA5', '#6FB7FF'];
+    // Five, like the text colours, so the row fits on one line with the custom colour and the pipette.
+    const ACCENT_COLORS = ['', '#FFFFFF', '#FFD93B', '#2EE86B', '#FF3EA5', '#6FB7FF'];
     const OUTLINE_COLORS = ['#000000', '#1B1B1D', '#FFFFFF', '#FFD93B'];
     const BOX_COLORS = ['#000000', '#1B1B1D', '#FFFFFF', '#FFD93B', '#FF6B3D'];
 
@@ -1626,7 +1628,20 @@
             h('input', {
                 type: 'color', class: 'swatch-custom' + (custom ? ' on' : ''), value: /^#[0-9a-f]{6}$/i.test(value || '') ? value.toLowerCase() : '#ffffff',
                 title: t('ed.customColor'), 'aria-label': t('ed.customColor'), onchange: (e) => onPick(e.target.value.toUpperCase())
-            }));
+            }),
+            // Anywhere on screen (Resolve's viewer included): the colour input's eyedropper only
+            // reaches the panel's own window.
+            api.pickColor ? h('button', {
+                type: 'button', class: 'swatch-pick', title: t('ed.pickScreen'), 'aria-label': t('ed.pickScreen'),
+                onclick: async () => {
+                    try {
+                        const color = await call('pickColor', t('ed.pickHint'));
+                        if (color) onPick(color);
+                    } catch (e) {
+                        flash(e.message, true);
+                    }
+                }
+            }, icon('pipette', 15)) : null);
     }
 
     // Punctuation toggles, with "All" switching every mark on (or off when all are on).

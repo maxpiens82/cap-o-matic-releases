@@ -195,6 +195,15 @@
         },
         openLogs: () => ok(true),
         openGuide: () => ok(true),
+        // The browser's own EyeDropper stands in for the panel's screen picker (src/picker.js).
+        pickColor: async () => {
+            if (!root.EyeDropper) return ok(null);
+            try {
+                return ok((await new root.EyeDropper().open()).sRGBHex.toUpperCase());
+            } catch (e) {
+                return ok(null);
+            }
+        },
         appInfo: () => ok({ version: tour ? '0.2.1' : '0.1.0', dataDir: '%APPDATA%\\Cap-o-matic' }),
         // Updates as an installed copy sees them; 0.2.0 is "available".
         updateState: () => ok({ version: tour ? '0.2.1' : '0.1.0', installed: true, pending: root.__mockPending || null, uninstalling: false }),

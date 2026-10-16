@@ -18,7 +18,18 @@
                 const gap = next.start - cur.end;
                 if (gap > 0 && gap <= (o.maxGap || 0)) cur.end = next.start;
             }
-            if (o.minFrames && cur.end - cur.start < o.minFrames) cur.end = Math.min(cur.start + o.minFrames, limit);
+            if (o.minFrames && cur.end - cur.start < o.minFrames) {
+                cur.end = Math.min(cur.start + o.minFrames, limit);
+                // Still short (the next caption starts right after it): start earlier, into the gap
+                // before it and, if need be, the previous caption's tail, which keeps its own minimum.
+                // Starting early is safe for the words: their timing counts from the clip's start.
+                if (cur.end - cur.start < o.minFrames) {
+                    const prev = out[i - 1];
+                    const floor = prev ? Math.min(prev.end, prev.start + o.minFrames) : 0;
+                    cur.start = Math.max(floor, cur.end - o.minFrames);
+                    if (prev && prev.end > cur.start) prev.end = cur.start;
+                }
+            }
             if (cur.end > limit) cur.end = limit;
             if (cur.end <= cur.start) cur.end = cur.start + 1;
         }

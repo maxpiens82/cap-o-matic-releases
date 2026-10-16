@@ -1,5 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 207.85" width="240" height="207.85">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 276 243.85" width="276" height="243.85">
   <title>Cap-o-matic</title>
-  <path fill="#F4F4F5" d="M120 0L60 103.92L180 103.92ZM60 103.92L0 207.85L120 207.85ZM180 103.92L120 207.85L240 207.85Z"/>
-  <path fill="#FF8A1F" d="M60 103.92L180 103.92L120 207.85Z"/>
+  <defs><filter id="glow8" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="9"/></filter></defs>
+  <path fill="#FF8A1F" opacity=".85" filter="url(#glow8)" d="M138 18L78 121.92L198 121.92ZM78 121.92L18 225.85L138 225.85ZM198 121.92L138 225.85L258 225.85Z"/>
+  <path fill="#FF8A1F" d="M138 18L78 121.92L198 121.92ZM78 121.92L18 225.85L138 225.85ZM198 121.92L138 225.85L258 225.85Z"/>
 </svg>

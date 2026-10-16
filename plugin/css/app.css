@@ -158,10 +158,10 @@ input[type=checkbox] { width: 15px; height: 15px; margin: 0; accent-color: var(-
 .tools { display: flex; gap: 4px; }
 .brush { margin: 0 14px 10px; padding: 10px; background: var(--bar); border: 1px solid var(--line); border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
 .brush .row { grid-template-columns: 56px minmax(0, 1fr); }
-.swatches { display: flex; align-items: center; gap: 6px; }
-.swatch { width: 24px; height: 24px; border-radius: 50%; padding: 0; border: 2px solid var(--bar); box-shadow: 0 0 0 1px #3a3a41; }
+.swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }   /* a long row wraps; the swatches never squash */
+.swatch { flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%; padding: 0; border: 2px solid var(--bar); box-shadow: 0 0 0 1px #3a3a41; }
 .swatch.on { box-shadow: 0 0 0 2px var(--text-strong); }
-.swatch-custom { width: 28px; height: 26px; padding: 0 2px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--field); cursor: pointer; }
+.swatch-custom { flex-shrink: 0; width: 28px; height: 26px; padding: 0 2px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--field); cursor: pointer; }
 
 .empty { margin: 40px 24px; text-align: center; color: var(--muted); line-height: 1.6; }
 .empty strong { display: block; color: var(--text); font-size: 14px; margin-bottom: 4px; }
@@ -182,10 +182,13 @@ input[type=checkbox] { width: 15px; height: 15px; margin: 0; accent-color: var(-
 .pv-warn { position: absolute; left: 0; right: 0; top: 0; z-index: 3; padding: 5px 7px; font-size: 11px; line-height: 1.35; color: #fff; text-align: center; background: rgba(150, 28, 32, .9); }
 .pv-frame.over { box-shadow: 0 0 0 2px var(--bad); }
 .pv-frame { position: relative; overflow: hidden; flex-shrink: 0; border-radius: 4px; background: #2a3038; box-shadow: 0 0 0 1px var(--line-2); }
-.pv-body { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); width: 46%; height: 40%; background: #343c46; border-radius: 48% 48% 0 0; }
-.pv-head { position: absolute; left: 50%; bottom: 37%; transform: translateX(-50%); width: 21%; aspect-ratio: 1; background: #3a434e; border-radius: 50%; }
-.pv-guide { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .45; pointer-events: none; }
+/* The stand-in person (assets/silhouette.svg), whole: head top at 27 % of the frame (like the owner's 9:16 test
+   clip), feet just above the bottom. */
+.pv-figure { position: absolute; left: 50%; top: 27%; height: 69%; transform: translateX(-50%); pointer-events: none; }
+.pv-guide { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .7; pointer-events: none; }   /* the mask's opacity (resolve.js GUIDE_OPACITY) */
 .swatch-custom.on { outline: 2px solid var(--text-strong); outline-offset: 1px; }
+.swatch-pick { flex-shrink: 0; width: 28px; height: 26px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line-2); border-radius: 4px; background: var(--field); color: var(--muted); }
+.swatch-pick:hover { color: var(--text-strong); border-color: var(--muted-2); }
 /* No automatic wrapping: like Text+, a caption only breaks at its own line break. */
 .pv-cap { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; text-align: center; line-height: 1.2; }
 /* Pop's spoken word, keyed like the comp: 60 % → 110 % at frame 2 → 100 % at frame 5 (30 fps). */
@@ -206,6 +209,10 @@ input[type=checkbox] { width: 15px; height: 15px; margin: 0; accent-color: var(-
 .btn.danger { border-color: #7a3236; background: #5a2a2d; color: #fff; font-weight: 600; }
 .btn.danger:hover { background: #6e2f33; }
 .icon-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; background: transparent; border: 1px solid var(--line-2); border-radius: 4px; color: #c4c4cc; }
+/* Section reset (Deliver), borderless like Resolve's Inspector reset arrows; dim when there's nothing to reset. */
+.icon-btn.reset { width: 26px; height: 26px; border-color: transparent; color: var(--muted-2); }
+.icon-btn.reset:hover:not(:disabled) { color: var(--text-strong); background: var(--raised); }
+.icon-btn.reset:disabled { opacity: .35; cursor: default; }
 .linklike { background: none; border: 0; padding: 0; color: var(--accent-text); text-decoration: underline; font-size: 12px; }
 .track-err { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font-size: 12px; color: #f3a6a9; }
 

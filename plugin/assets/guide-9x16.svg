@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920">
+  <title>Safe zones (9:16)</title>
+  <rect x="0" y="0" width="1080" height="208" fill="#18181B"/>
+  <rect x="913" y="662" width="167" height="818" fill="#18181B"/>
+  <rect x="0" y="1480" width="1080" height="440" fill="#18181B"/>
+  <rect x="107" y="276" width="866" height="109" fill="#9DB4E0" opacity="0.55"/>
+  <ellipse cx="540" cy="723" rx="294" ry="294" fill="#F4F4F5" opacity="0.55"/>
+  <rect x="257" y="1069" width="566" height="329" fill="#FF8A1F" opacity="0.55"/>
+  <g font-family="Montserrat, sans-serif" font-weight="500" font-size="53.11" text-anchor="middle" dominant-baseline="central">
+    <text x="540" fill="#A1A1AA"><tspan x="540" y="105">BLOCKED</tspan></text>
+    <text x="540" fill="#2B3E6B"><tspan x="540" y="331">SECONDARY TEXT</tspan></text>
+    <text x="540" fill="#52525B"><tspan x="540" y="690.6">CENTER OF</tspan><tspan x="540" y="755.4">ATTENTION</tspan></text>
+    <text x="540" fill="#18181B"><tspan x="540" y="1230">SUBTITLES</tspan></text>
+    <text x="540" fill="#A1A1AA"><tspan x="540" y="1700">BLOCKED</tspan></text>
+  </g>
+</svg>
