@@ -1,11 +1,11 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/cap-o-matic-logo-light.svg">
-  <img alt="Cap-o-matic by ENNEA" src="images/cap-o-matic-logo.svg" width="420">
+  <img alt="Cap-o-matic by RE!" src="images/cap-o-matic-logo.svg" width="420">
 </picture>
 
 # Cap-o-matic releases
 
-Animated captions for DaVinci Resolve Studio, by ENNEA.
+Animated captions for DaVinci Resolve Studio, by RE!.
 
 Download the latest version from **[Releases](https://github.com/maxpiens82/cap-o-matic-releases/releases/latest)**.
 
