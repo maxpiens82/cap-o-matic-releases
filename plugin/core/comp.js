@@ -1,10 +1,11 @@
 // Writes the Fusion composition (.comp text) for one caption. Recipe and input names are in
 // docs/FUSION-NOTES.md: a Base Text+ with the whole caption, optional emphasis layers, and an
-// Active Text+ that shows only the spoken word through stepped write-on keyframes.
+// Active Text+ that shows only the spoken word through stepped write-on keyframes. Whip is its
+// own recipe: one Text+ per word, moved by Vector Results (buildWhip).
 (function (root, factory) {
-    if (typeof module === 'object' && module.exports) module.exports = factory(require('./textfx'), require('./fonts'));
-    else (root.CapCore = root.CapCore || {}).comp = factory(root.CapCore.textfx, root.CapCore.fonts);
-})(this, function (textfx, fonts) {
+    if (typeof module === 'object' && module.exports) module.exports = factory(require('./textfx'), require('./fonts'), require('./whip'));
+    else (root.CapCore = root.CapCore || {}).comp = factory(root.CapCore.textfx, root.CapCore.fonts, root.CapCore.whip);
+})(this, function (textfx, fonts, whip) {
     'use strict';
 
     const STYLES = {
@@ -47,6 +48,11 @@
         // Letters appear as each word is spoken, at the word's own pace.
         typewriter: {
             mode: 'type',
+            base: { fill: '#FFFFFF' }
+        },
+        // Every word whips into a place of its own and out again (core/whip.js, buildWhip).
+        whip: {
+            mode: 'whip',
             base: { fill: '#FFFFFF' }
         }
     };
@@ -107,6 +113,7 @@
     function input(v) {
         if (v && typeof v === 'object' && v.expr) return input(v.value).replace(/, \}$/, `, Expression = ${lua(v.expr)}, }`);
         if (v && typeof v === 'object' && v.mod) return `Input { SourceOp = ${lua(v.mod)}, Source = "StyledText", }`;
+        if (v && typeof v === 'object' && v.op) return `Input { SourceOp = ${lua(v.op)}, Source = ${lua(v.src)}, }`;
         if (v && typeof v === 'object' && !Array.isArray(v)) return `Input { SourceOp = ${lua(v.spline)}, Source = "Value", }`;
         if (Array.isArray(v)) return `Input { Value = { ${v.map(num).join(', ')} }, }`;
         if (typeof v === 'string') return `Input { Value = ${lua(v)}, }`;
@@ -204,8 +211,8 @@
     // ------------------------------------------------------------ caption layout
 
     // Applies case/punctuation, drops words that end up empty, and lays the text out.
-    // Returns { text, words: [{ text, s, e, f, fe, emph }] } with s/e character offsets and f/fe
-    // the word's start and end frames relative to the clip.
+    // Returns { text, words: [{ text, s, e, f, fe, emph, at }] } with s/e character offsets, f/fe
+    // the word's start and end frames relative to the clip, and `at` where a Whip word was dragged.
     function prepare(caption, clipStart, look) {
         const kept = [];
         let lineBreak = null;
@@ -213,7 +220,7 @@
             const t = textfx.apply(w.text, look.caseMode, look.strip);
             if (!t) return;
             if (caption.lineBreak != null && i >= caption.lineBreak && lineBreak == null && kept.length) lineBreak = kept.length;
-            kept.push({ text: t, f: Math.max(0, w.start - clipStart), fe: Math.max(0, w.end - clipStart), emph: w.emph || null });
+            kept.push({ text: t, f: Math.max(0, w.start - clipStart), fe: Math.max(0, w.end - clipStart), emph: w.emph || null, at: w.at || null });
         });
         let text = '';
         kept.forEach((w, i) => {
@@ -233,6 +240,7 @@
     //         fade: { on, in, out (frames), rest (%) }, tracking: { on, from (%), over (% of the caption) } }
     function build(caption, clip, look) {
         const style = tuned(look);
+        if (style.mode === 'whip') return buildWhip(caption, clip, look);
         const duration = Math.max(1, clip.end - clip.start);
         const { text, words } = prepare(caption, clip.start, look);
         const N = Math.max(1, text.length);
@@ -351,15 +359,12 @@
             inputs.Style = { value: common.Style, expr: 'Base.Style' };
         }
 
-        // Tracking that opens up: every layer's letter spacing (Text+ CharacterSpacing, 1 = normal)
-        // eases out from tight to normal over the first `over`% of the caption, all from one spline
-        // so the layers stay lined up.
+        // Letters drifting apart (driftKeys): every layer's letter spacing (Text+ CharacterSpacing,
+        // 1 = normal) from one spline, so the layers stay lined up. The panel measures how far each
+        // caption may spread before its widest line leaves the frame (caption.driftMax).
         const tr = look.tracking && look.tracking.on ? look.tracking : null;
-        if (tr && tr.from < 100) {
-            const span = Math.max(1, Math.round((duration - 1) * (tr.over == null ? 100 : tr.over) / 100));
-            const tight = trackingStart(tr.from);
-            const keys = [0, 0.25, 0.5, 0.75, 1].map((t) => [t * span, 1 - (1 - tight) * (1 - t) * (1 - t)]);
-            extra.push(spline('Tracking', keys, false));
+        if (tr && tr.speed > 0) {
+            extra.push(spline('Tracking', driftKeys(tr, duration, look.fps || 30, caption.driftMax), false));
             for (const [, inputs] of tools) inputs.CharacterSpacing = { spline: 'Tracking' };
         }
         return assemble(tools, extra, duration, common.Center, fadeKeys(look.fade, duration));
@@ -376,12 +381,43 @@
     // The caption is one MacroOperator named "Template" in a comp tagged TEMPLATE_ID: only that pair
     // gets the Inspector controls (verified in Resolve 21.1: the tag or the name alone show nothing).
     // A macro is transparent in the file, so MediaOut1 links straight to the inner Transform.
-    // The tracking setting's start (50–100 %) as Text+ CharacterSpacing. Text+ moves each letter by
+    // The drift setting's start (%) as Text+ CharacterSpacing. Text+ moves each letter by
     // about 1.43 em per unit (render check 2026-10-15: at 0.8 the word spaces vanish and letters
     // overlap), so the setting is scaled down: 80 % → 0.95, about −0.07 em a letter; 50 % → 0.875.
     const TRACK_SCALE = 0.25;
     function trackingStart(from) {
         return 1 - (1 - Math.min(100, Math.max(0, from)) / 100) * TRACK_SCALE;
+    }
+
+    // Drift (owner, 2026-10-17): the letters keep spreading for the whole caption at the same speed in
+    // every caption, whatever its length: `speed` % of the setting per second (on the same scale as
+    // `from`), from `from` %. Straight for the first DRIFT_LINEAR seconds, then easing out to a stop at
+    // the caption's end, so a long caption doesn't end up too wide. `max` (the caption's driftMax, the
+    // most spacing its widest line takes inside the frame) stops it there and holds; a line with no
+    // room at all keeps its starting spacing. Keys: [frame, CharacterSpacing].
+    const DRIFT_LINEAR = 1.5;
+    function driftKeys(tr, duration, fps, max) {
+        const last = Math.max(1, duration - 1);
+        const start = trackingStart(tr.from);
+        const v = (tr.speed / 100) * TRACK_SCALE / fps;
+        const lin = Math.min(last, Math.round(DRIFT_LINEAR * fps));
+        const keys = [[0, start], [lin, start + v * lin]];
+        const tail = last - lin;
+        if (tail > 0) for (const u of [0.25, 0.5, 0.75, 1]) keys.push([lin + u * tail, start + v * lin + v * tail * (u - u * u / 2)]);
+        const top = max == null ? Infinity : Math.max(max, start);
+        if (keys[keys.length - 1][1] <= top) return keys;
+        const out = [keys[0]];
+        for (let i = 1; i < keys.length; i++) {
+            const [f0, v0] = keys[i - 1], [f1, v1] = keys[i];
+            if (v1 <= top) {
+                out.push(keys[i]);
+                continue;
+            }
+            const at = v1 === v0 ? f0 : f0 + (f1 - f0) * (top - v0) / (v1 - v0);
+            out.push([at, top], [last, top]);
+            break;
+        }
+        return out;
     }
 
     // Fade in, hold at the rest opacity, fade out: Blend keys for the whole caption, or null when it
@@ -422,10 +458,19 @@
                 `\t\t\t\tBlend = Input { SourceOp = "FadeBlend", Source = "Value", },\n\t\t\t},\n\t\t},\n`;
             last = 'Fade';
         }
-        // Pivot on the caption so Size grows it in place; Center 0.5 means "where Cap-o-matic put it".
-        body += `\t\tPlace = Transform {\n\t\t\tInputs = {\n\t\t\t\tInput = Input { SourceOp = ${lua(last)}, Source = "Output", },\n` +
+        return wrap(body + placeTool(last, center), PUBLISHED, duration);
+    }
+
+    // Pivot on the caption so Size grows it in place; Center 0.5 means "where Cap-o-matic put it".
+    function placeTool(last, center) {
+        return `\t\tPlace = Transform {\n\t\t\tInputs = {\n\t\t\t\tInput = Input { SourceOp = ${lua(last)}, Source = "Output", },\n` +
             `\t\t\t\tPivot = ${input(center)},\n\t\t\t},\n\t\t},\n`;
-        const published = PUBLISHED.map(([op, src, extraKeys], i) => {
+    }
+
+    // The tools as the "Template" macro of a tagged comp, publishing `published` ([tool, input,
+    // { Name, Default, ControlGroup }]) to the Inspector, rendered through Place.
+    function wrap(body, list, duration) {
+        const published = list.map(([op, src, extraKeys], i) => {
             const keys = Object.entries(extraKeys).map(([k, v]) => `${k} = ${typeof v === 'string' ? lua(v) : num(v)}, `).join('');
             return `\t\t\t\tInput${i + 1} = InstanceInput { SourceOp = ${lua(op)}, Source = ${lua(src)}, ${keys}},\n`;
         }).join('');
@@ -435,6 +480,173 @@
         const out = `\t\tMediaOut1 = Saver {\n\t\t\tInputs = {\n\t\t\t\tIndex = Input { Value = "0", },\n\t\t\t\tInput = Input { SourceOp = "Place", Source = "Output", },\n\t\t\t},\n\t\t},\n`;
         return `Composition {\n\tCurrentTime = 0,\n\tRenderRange = { 0, ${duration - 1} },\n\tGlobalRange = { 0, ${duration - 1} },\n` +
             `\tCustomData = { TEMPLATE_ID = "Text+" },\n\tTools = ordered() {\n${macro}${out}\t},\n}\n`;
+    }
+
+    // ------------------------------------------------------------ whip
+
+    // The Fusion names Whip needs that no export in the repo shows yet, in one place to correct
+    // after the desk check (docs/STATUS.md, "Whip"; tools/whip_desk_check.py reads them from a
+    // Vector Result built by hand). From shipped and shared .setting files (Blackmagic's Fall and
+    // Bounce transition, SirEdric's TiltShift, FloatingPanels; research 2026-10-18):
+    //   vector, vectorOut  the Vector Result modifier's ID ("Modify With > Vector") and its output
+    //   chain              true: two per word, the out one's Origin linked to the in one's Position,
+    //                      so both angles are plain numbers the Inspector can show (not seen in a
+    //                      shared file yet); false: one per word, its Angle switched by a stepped key
+    //   aspect             its Image Aspect: Position = Origin + Distance × (cos A, sin A × aspect)
+    //                      in Fusion's 0–1 units, Distance in frame widths, so width / height keeps
+    //                      a whip the same length in every direction
+    //   blur               Text+ motion blur (Settings tab); rotate: Text+ 2D rotation (Layout, Angle Z)
+    const FUSION = {
+        vector: 'Vector', vectorOut: 'Position', chain: true, aspect: (w, h) => w / h,
+        blur: { on: 'MotionBlur', quality: 'Quality', shutter: 'ShutterAngle', bias: 'CenterBias', spread: 'SampleSpread' },
+        rotate: 'AngleZ'
+    };
+    // Samples on each side of the frame (Fusion's Quality); the shared whips use 6 to 16.
+    const BLUR_QUALITY = 6;
+    // Text+ moves each letter about 1.43 em per unit of CharacterSpacing (render check 2026-10-15).
+    const SPACING_EM = 1.43;
+
+    const mergeTool = (name, bg, fg, extra) => toolBlock(name, 'Merge', Object.assign({ Background: { op: bg, src: 'Output' }, Foreground: { op: fg, src: 'Output' } }, extra));
+
+    // A Whip caption: every word its own Text+ (W1, W2, …) whose Center comes from Vector Results:
+    // W<n>In (Origin = where the word rests, Angle = the side it comes from, Distance keyed from the
+    // whole whip down to 0) and W<n>Out (Origin = W<n>In's result, Angle = the side it leaves
+    // toward, Distance keyed from 0 up). Each word fades through its own Merge (Blend keyed) over a
+    // clear frame and blurs with Text+'s own motion blur. Layout and keys come from core/whip.js,
+    // as the panel's preview draws them; caption.whip carries the panel's measurements of each
+    // word ({ index, metrics }; without them, rough ones).
+    function buildWhip(caption, clip, look) {
+        const s = whip.settings(look.whip);
+        const W = look.width || 1920;
+        const H = look.height || 1080;
+        const duration = Math.max(1, clip.end - clip.start);
+        const { words } = prepare(caption, clip.start, look);
+        const font = look.font || DEFAULT_FONT;
+        const fontStyle = look.fontStyle || (look.font ? styleFor(look.font) : DEFAULT_WEIGHT);
+        const meta = caption.whip || {};
+        const emphOf = (w) => (w.emph ? Object.assign({}, w.emph, look.emphOverride || {}) : null);
+        const placed = whip.layout(words.map((w) => ({ text: w.text, emph: emphOf(w), at: w.at })), {
+            whip: s, width: W, height: H, index: meta.index || 0,
+            measure: (w, i) => (meta.metrics && meta.metrics[i]) || whip.estimate(w.text, (w.emph && w.emph.font) || font)
+        });
+        const keys = whip.animate(placed, words.map((w) => w.f), duration, s, look.fade && look.fade.on ? look.fade : null);
+        const name = (i) => `W${i + 1}`;
+        // The first word in the caption's own font and colour leads; the others follow it, so the
+        // Inspector's Font and Text Color change them all (emphasized words keep theirs).
+        const lead = placed.findIndex((p) => !(p.emph && p.emph.font));
+        const tint = placed.findIndex((p) => !(p.emph && p.emph.color));
+        const outline = look.outline && look.outline.on ? outlineInputs(look.outline) : null;
+        const b = FUSION.blur;
+        const aspect = FUSION.aspect(W, H);
+
+        let body = toolBlock('Clear', 'Background', { GlobalOut: duration - 1, UseFrameFormatSettings: 1, TopLeftAlpha: 0 });
+        let last = 'Clear';
+        placed.forEach((p, i) => {
+            const n = name(i);
+            const e = p.emph;
+            const tp = whip.textPlus(p, W, H);
+            const follow = (j, key, value) => (j < 0 || j === i ? value : { value, expr: `${name(j)}.${key}` });
+            const own = !!(e && e.font);
+            const inputs = {
+                GlobalOut: duration - 1, Width: W, Height: H, UseFrameFormatSettings: 1, StyledText: p.text,
+                Font: own ? e.font : follow(lead, 'Font', font),
+                Style: own ? e.fontStyle || styleFor(e.font) : follow(lead, 'Style', fontStyle),
+                Size: tp.size,
+                Center: { op: FUSION.chain ? `${n}Out` : `${n}Path`, src: FUSION.vectorOut },
+                VerticalJustificationNew: 3, HorizontalJustificationNew: 3
+            };
+            for (const [k, v] of Object.entries(color(1, e && e.color ? e.color : look.color || '#FFFFFF'))) {
+                inputs[k] = e && e.color ? v : k === 'Alpha1' ? v : follow(tint, k, v);
+            }
+            if (s.glow) Object.assign(inputs, glow({ color: s.glow, soft: 18, strength: 0.6 }));
+            else if (outline) Object.assign(inputs, outline);
+            if (look.shadow) Object.assign(inputs, shadowInputs(look.shadow, tp.size));
+            // Element 4 is either the underline bar or a box behind the word.
+            if (s.bar) Object.assign(inputs, bar({ color: s.bar }));
+            else if (look.box) Object.assign(inputs, box({ level: 1, extH: 0.05, extV: 0.04, round: 0.12, color: look.box.color, alpha: look.box.opacity / 100 }));
+            if (s.spacing) inputs.CharacterSpacing = 1 + s.spacing / 100 / SPACING_EM;
+            if (p.tilt) inputs[FUSION.rotate] = p.tilt;
+            // Motion blur on every word, set from W1's (published as Motion Blur and Shutter Angle).
+            const on = s.shutter > 0 ? 1 : 0;
+            const shutter = s.shutter || 180;
+            Object.assign(inputs, {
+                [b.on]: i ? { value: on, expr: `W1.${b.on}` } : on, [b.quality]: BLUR_QUALITY,
+                [b.shutter]: i ? { value: shutter, expr: `W1.${b.shutter}` } : shutter, [b.bias]: 0, [b.spread]: 1
+            });
+            body += textTool(n, inputs);
+
+            const d = p.dist / W;
+            const k = keys[i];
+            if (FUSION.chain) {
+                body += toolBlock(`${n}In`, FUSION.vector, { Origin: tp.center, Distance: { spline: `${n}InDist` }, Angle: p.in, ImageAspect: aspect }) +
+                    spline(`${n}InDist`, k.in.map(([f, v]) => [f, v * d]), false) +
+                    toolBlock(`${n}Out`, FUSION.vector, { Origin: { op: `${n}In`, src: FUSION.vectorOut }, Distance: { spline: `${n}OutDist` }, Angle: p.out, ImageAspect: aspect }) +
+                    spline(`${n}OutDist`, k.out.map(([f, v]) => [f, v * d]), false);
+            } else {
+                // One Vector Result: the angle steps from in to out while the word rests (Distance 0).
+                // In a squeezed clip the in-whip finishes first and the out-whip follows it.
+                const step = Math.max(k.timing.outAt, k.timing.inAt + k.timing.inLen);
+                const shift = step - k.timing.outAt;
+                body += toolBlock(`${n}Path`, FUSION.vector, { Origin: tp.center, Distance: { spline: `${n}Dist` }, Angle: { spline: `${n}Angle` }, ImageAspect: aspect }) +
+                    spline(`${n}Dist`, k.in.filter(([f]) => f < step).concat(k.out.map(([f, v]) => [f + shift, v])).map(([f, v]) => [f, v * d]), false) +
+                    spline(`${n}Angle`, [[0, p.in], [step, p.out]], true);
+            }
+            body += spline(`${n}Fade`, k.opacity, false) + mergeTool(`Merge${i + 1}`, last, n, { Blend: { spline: `${n}Fade` } });
+            last = `Merge${i + 1}`;
+        });
+
+        const published = [];
+        if (lead >= 0) published.push([name(lead), 'Font', { ControlGroup: 1 }], [name(lead), 'Style', { ControlGroup: 1 }]);
+        if (tint >= 0) published.push([name(tint), 'Red1', { Name: 'Text Color', ControlGroup: 2 }], [name(tint), 'Green1', { ControlGroup: 2 }], [name(tint), 'Blue1', { ControlGroup: 2 }]);
+        published.push(['Place', 'Size', { Name: 'Size', Default: 1 }], ['Place', 'Center', { Name: 'Position' }]);
+        if (placed.length) published.push(['W1', b.on, { Name: 'Motion Blur' }], ['W1', b.shutter, { Name: 'Shutter Angle' }]);
+        // Each word's place (a point: a crosshair in the viewer, with the Edit page's Fusion
+        // Overlay on), size and whip angles, each resetting to what Cap-o-matic gave it.
+        placed.forEach((p, i) => {
+            const n = name(i);
+            const tp = whip.textPlus(p, W, H);
+            published.push([FUSION.chain ? `${n}In` : `${n}Path`, 'Origin', { Name: `Word ${i + 1} Position`, DefaultX: tp.center[0], DefaultY: tp.center[1] }],
+                [n, 'Size', { Name: `Word ${i + 1} Size`, Default: tp.size }]);
+            if (FUSION.chain) published.push([`${n}In`, 'Angle', { Name: `Word ${i + 1} In`, Default: p.in }], [`${n}Out`, 'Angle', { Name: `Word ${i + 1} Out`, Default: p.out }]);
+        });
+        return wrap(body + placeTool(last, [s.x / 100, 1 - s.y / 100]), published, duration);
+    }
+
+    // The word positions in a Whip comp read back from Resolve (ExportFusionComp), where the editor
+    // may have dragged them: each word's text and its Text+ Center at rest, in Fusion's units, after
+    // the caption's own Position and Size (Place). Null when the comp isn't a Whip caption.
+    function readWhip(text) {
+        const blocks = toolBlocks(text);
+        const own = (name) => {
+            const bl = blocks.find((x) => x.name === name);
+            return bl ? text.slice(bl.at, bl.end) : null;
+        };
+        const point = (src, key) => {
+            const m = new RegExp(`\\n\\t*${key}\\s*=\\s*Input\\s*\\{\\s*Value\\s*=\\s*\\{\\s*(-?[\\d.e-]+),\\s*(-?[\\d.e-]+)\\s*\\}`).exec(src || '');
+            return m ? [Number(m[1]), Number(m[2])] : null;
+        };
+        const number = (src, key, dflt) => {
+            const m = new RegExp(`\\n\\t*${key}\\s*=\\s*Input\\s*\\{\\s*Value\\s*=\\s*(-?[\\d.e-]+)`).exec(src || '');
+            return m ? Number(m[1]) : dflt;
+        };
+        const place = own('Place');
+        const pivot = point(place, 'Pivot') || [0.5, 0.5];
+        const center = point(place, 'Center') || [0.5, 0.5];
+        const size = number(place, 'Size', 1);
+        const words = [];
+        for (let i = 1; own(`W${i}`); i++) {
+            const t = /\n\t*StyledText\s*=\s*Input\s*\{\s*Value\s*=\s*"((?:[^"\\]|\\.)*)"/.exec(own(`W${i}`));
+            const vector = own(`W${i}In`) || own(`W${i}Path`);
+            if (!t || !vector) return null;
+            // Fusion leaves out an input at its default ({ 0.5, 0.5 }); a keyed one links a spline
+            // instead, which isn't a place to keep (center null: left alone).
+            const keyed = /\n\t*Origin\s*=\s*Input\s*\{\s*SourceOp/.test(vector);
+            const origin = keyed ? null : point(vector, 'Origin') || [0.5, 0.5];
+            // The Transform scales about its Pivot and moves the pivot by Center's offset from the middle.
+            const at = origin && origin.map((v, k) => pivot[k] + (v - pivot[k]) * size + (center[k] - 0.5));
+            words.push({ text: t[1].replace(/\\n/g, '\n').replace(/\\(.)/g, '$1'), center: at });
+        }
+        return words.length ? words : null;
     }
 
     // ------------------------------------------------------------ bring-your-own templates
@@ -651,5 +863,5 @@
         return `Composition {\n\tCurrentTime = 0,\n\tRenderRange = { 0, ${last} },\n\tGlobalRange = { 0, ${last} },\n\tTools = {\n${tools.join('')}\t},\n}\n`;
     }
 
-    return { STYLES, build, fromTemplate, prepare, guide, lua, fadeKeys, trackingStart, MASK_ZONES, MASK_LABELS };
+    return { STYLES, FUSION, build, fromTemplate, prepare, readWhip, guide, lua, fadeKeys, trackingStart, driftKeys, MASK_ZONES, MASK_LABELS };
 });

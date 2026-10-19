@@ -46,6 +46,13 @@
             id: 'typewriter', name: 'Typewriter', tags: ['Word', 'Minimal'], stage: '#262A2E', typing: true,
             base: MS + 'color:#fff;display:inline-block;',
             act: MS + 'color:#fff;display:inline-block;'
+        },
+        {
+            // Every word whips into a place of its own and out again (core/whip.js). Its card and
+            // Deliver preview are drawn on a canvas (app.js whipStill, whipPreview), not with this CSS.
+            id: 'whip', name: 'Whip', tags: ['Word', 'Bold'], stage: '#2E2A3F', whip: true,
+            base: MS + 'color:#fff;display:inline-block;',
+            act: MS + 'color:#FFD93B;display:inline-block;'
         }
     ];
     root.STYLE_FILTERS = ['All', 'Word', 'Karaoke', 'Box', 'Bold', 'Minimal'];

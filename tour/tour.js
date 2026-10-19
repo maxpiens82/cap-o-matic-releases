@@ -5,6 +5,7 @@
 (function () {
     const TEXT = {
         en: {
+            by: 'by RE!',
             tagline: "Animated captions for DaVinci Resolve Studio, from your timeline's speech.",
             downloads: 'Downloads', restarting: 'Restarting Resolve…',
             endTitle: "That's the whole workflow.",
@@ -28,6 +29,7 @@
         // Spanish here is marketing copy: Rioplatense, with vos (docs/BRAND.md section 11). The console
         // lines copy the installer's own messages, which stay in the panel's neutral tú.
         es: {
+            by: 'de RE!',
             tagline: 'Subtítulos animados para DaVinci Resolve Studio, a partir de lo que se dice en tu timeline.',
             downloads: 'Descargas', restarting: 'Reiniciando Resolve…',
             endTitle: 'Ese es todo el flujo.',

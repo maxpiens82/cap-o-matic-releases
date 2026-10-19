@@ -1,9 +1,9 @@
 // Presets: a named snapshot of everything that shapes captions — style, phrase rules, emphasis
 // brush and the Deliver look — kept globally and shareable as a file. Pure: no I/O.
 (function (root, factory) {
-    if (typeof module === 'object' && module.exports) module.exports = factory(require('./textfx'));
-    else (root.CapCore = root.CapCore || {}).presets = factory(root.CapCore.textfx);
-})(this, function (textfx) {
+    if (typeof module === 'object' && module.exports) module.exports = factory(require('./textfx'), require('./whip'));
+    else (root.CapCore = root.CapCore || {}).presets = factory(root.CapCore.textfx, root.CapCore.whip);
+})(this, function (textfx, whip) {
     'use strict';
 
     const KIND = 'cap-o-matic/preset';
@@ -19,29 +19,43 @@
     // ------------------------------------------------------------ validation
 
     const isHex = (v) => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
+    const isHexOrNone = (v) => v === '' || isHex(v);
     const isNum = (lo, hi, int) => (v) => typeof v === 'number' && isFinite(v) && v >= lo && v <= hi && (!int || Number.isInteger(v));
     const isBool = (v) => typeof v === 'boolean';
     const isStr = (max) => (v) => typeof v === 'string' && v.length <= max;
     const oneOf = (...xs) => (v) => xs.includes(v);
+    const isPlain = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
     const marks = new Set(textfx.MARKS.map((m) => m.key));
 
     // A schema maps each key to a test, or to a nested schema that must pass whole.
     const SHADOW = { on: isBool, color: isHex, opacity: isNum(0, 100), distance: isNum(0, 40), angle: isNum(0, 359), softness: isNum(0, 40) };
+    // Whip's settings (whip.js). Unlike a nested schema, a part of them is fine (whip.settings fills
+    // in the rest), but one unknown key or bad value drops the lot.
+    const WHIP = {
+        pattern: oneOf(...whip.PATTERN_IDS), inMode: oneOf(...whip.IN_MODES), inAngle: isNum(0, 359),
+        outMode: oneOf(...whip.OUT_MODES), outAngle: isNum(0, 359), distance: isNum(0, 200),
+        inFrames: isNum(1, 30, true), outFrames: isNum(1, 30, true), overshoot: isNum(0, 50), stagger: isNum(0, 10, true),
+        shutter: isNum(0, 360), scale: isNum(30, 200), x: isNum(0, 100), y: isNum(0, 100), spacing: isNum(0, 50),
+        glow: isHexOrNone, bar: isHexOrNone
+    };
+    const isWhip = (v) => isPlain(v) && Object.entries(v).every(([k, x]) => Object.prototype.hasOwnProperty.call(WHIP, k) && WHIP[k](x));
     const SCHEMA = {
         rules: { maxWords: isNum(1, 8, true), maxChars: isNum(6, 50, true), lines: oneOf(1, 2), sentenceBreak: isBool, pauseBreak: isBool, pauseSeconds: isNum(0.1, 3), perLine: isBool },
         brush: { color: isHex, size: isNum(0.5, 3), font: isStr(100), fontStyle: isStr(100) },
         look: {
-            size: isNum(30, 200), x: isNum(0, 100), y: isNum(0, 100), font: isStr(100), fontStyle: isStr(100), color: (v) => v === '' || isHex(v),
+            size: isNum(30, 200), x: isNum(0, 100), y: isNum(0, 100), font: isStr(100), fontStyle: isStr(100), color: isHexOrNone,
             caseMode: oneOf('as', 'upper', 'lower'),
-            strip: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.entries(v).every(([k, b]) => marks.has(k) && isBool(b)),
+            strip: (v) => isPlain(v) && Object.entries(v).every(([k, b]) => marks.has(k) && isBool(b)),
             fillGaps: isBool, maxGap: isNum(0, 120, true), minFrames: isNum(1, 120, true), clipColor: isStr(30), keepTemplate: isBool,
             guide: isBool, emphOn: isBool, emphColor: isHex, emphSize: isNum(0.5, 3), shadow: SHADOW,
             // Style settings (comp.js tuned): accent color, line box, Pop's growing, Spotlight dim, outline.
-            accent: (v) => v === '' || isHex(v), box: { color: isHex, opacity: isNum(0, 100) }, pop: isBool, dim: isNum(0, 100),
+            accent: isHexOrNone, box: { color: isHex, opacity: isNum(0, 100) }, pop: isBool, dim: isNum(0, 100),
             outline: { on: isBool, color: isHex, width: isNum(0, 0.5) },
-            // Motion: fade (frames, rest opacity %) and tracking that opens up.
+            // Motion: fade (frames, rest opacity %) and letters drifting apart (start %, speed % a second).
             fade: { on: isBool, in: isNum(0, 60, true), out: isNum(0, 60, true), rest: isNum(10, 100) },
-            tracking: { on: isBool, from: isNum(50, 100), over: isNum(10, 100) }
+            tracking: { on: isBool, from: isNum(50, 100), speed: isNum(1, 30) },
+            // Whip: where its words go and how they whip in and out.
+            whip: isWhip
         }
     };
 

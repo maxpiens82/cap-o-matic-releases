@@ -146,13 +146,15 @@
 
     // ------------------------------------------------------------ small widgets
 
+    // options: [value, text, disabled, title] (the last two optional).
     function seg(options, value, onPick, label) {
         return h('div', { class: 'seg', role: 'group', 'aria-label': label || null },
-            options.map(([v, text, disabled]) => h('button', {
+            options.map(([v, text, disabled, title]) => h('button', {
                 type: 'button',
                 class: v === value ? 'on' : '',
                 'aria-pressed': String(v === value),
                 disabled: !!disabled,
+                title: title || null,
                 onclick: () => onPick(v)
             }, text)));
     }
@@ -180,6 +182,97 @@
             }
         });
         return h('div', { class: 'row slider' }, h('label', { class: 'lbl', for: id }, label), input, out);
+    }
+
+    // An angle on a compass, as Fusion counts them: 0° right, 90° up. Drag the needle round (Shift
+    // snaps to 15°) or use the arrow keys (1°, Shift 15°); like a slider, onInput follows and
+    // onCommit runs on release. inward: the arrow points at the centre (where a word comes from)
+    // rather than out to the rim (where it goes).
+    function angleDial(id, label, value, onInput, onCommit, inward) {
+        const NS = 'http://www.w3.org/2000/svg';
+        const svg = (tag, attrs) => {
+            const el = document.createElementNS(NS, tag);
+            for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
+            return el;
+        };
+        const ticks = [0, 90, 180, 270].map((a) => {
+            const c = Math.cos((a * Math.PI) / 180);
+            const s = Math.sin((a * Math.PI) / 180);
+            return svg('line', { class: 'tick', x1: 24 + 17 * c, y1: 24 - 17 * s, x2: 24 + 20 * c, y2: 24 - 20 * s });
+        });
+        const needle = svg('line', { class: 'needle', x1: 24, y1: 24, x2: 24, y2: 24 });
+        const head = svg('path', { class: 'head', d: '' });
+        const pic = svg('svg', { viewBox: '0 0 48 48', 'aria-hidden': 'true' });
+        pic.append(svg('circle', { class: 'ring', cx: 24, cy: 24, r: 20 }), ...ticks, needle, head, svg('circle', { class: 'hub', cx: 24, cy: 24, r: 2.2 }));
+        const out = h('span', { class: 'val' }, `${value}°`);
+        let v = value;
+        const draw = () => {
+            const r = (v * Math.PI) / 180;
+            const c = Math.cos(r);
+            const s = Math.sin(r);
+            const rim = [24 + 18 * c, 24 - 18 * s];
+            const tip = inward ? [24 + 5 * c, 24 - 5 * s] : rim;
+            const d = inward ? -1 : 1;
+            needle.setAttribute('x1', inward ? rim[0] : 24);
+            needle.setAttribute('y1', inward ? rim[1] : 24);
+            needle.setAttribute('x2', tip[0]);
+            needle.setAttribute('y2', tip[1]);
+            // The arrowhead: back along the needle, spread either side of it.
+            const back = [tip[0] - 6 * d * c, tip[1] + 6 * d * s];
+            head.setAttribute('d', `M${tip[0]} ${tip[1]}L${back[0] - 3.5 * s} ${back[1] - 3.5 * c}L${back[0] + 3.5 * s} ${back[1] + 3.5 * c}Z`);
+            out.textContent = `${v}°`;
+            dial.setAttribute('aria-valuenow', String(v));
+            dial.setAttribute('aria-valuetext', `${v}°`);
+        };
+        const set = (next) => {
+            const a = ((Math.round(next) % 360) + 360) % 360;
+            if (a === v) return;
+            v = a;
+            draw();
+            onInput(v);
+        };
+        const angleAt = (e) => {
+            const b = pic.getBoundingClientRect();
+            const a = (Math.atan2(b.top + b.height / 2 - e.clientY, e.clientX - b.left - b.width / 2) * 180) / Math.PI;
+            return e.shiftKey ? Math.round(a / 15) * 15 : a;
+        };
+        let held = false;
+        const release = () => {
+            if (!held) return;
+            held = false;
+            dial.classList.remove('held');
+            lookDragging = false;
+            if (onCommit) onCommit();
+        };
+        const dial = h('div', {
+            id, class: 'dial', role: 'slider', tabindex: '0', title: t('whip.dialTitle'), 'aria-label': label,
+            'aria-valuemin': '0', 'aria-valuemax': '359',
+            onpointerdown: (e) => {
+                if (e.button !== 0) return;
+                e.preventDefault();
+                dial.focus();
+                dial.setPointerCapture(e.pointerId);
+                held = true;
+                dial.classList.add('held');
+                set(angleAt(e));
+            },
+            onpointermove: (e) => {
+                if (held) set(angleAt(e));
+            },
+            onpointerup: release,
+            onpointercancel: release,
+            onkeydown: (e) => {
+                const step = e.shiftKey ? 15 : 1;
+                const by = { ArrowRight: step, ArrowUp: step, ArrowLeft: -step, ArrowDown: -step, PageUp: 15, PageDown: -15 }[e.key];
+                if (by == null) return;
+                e.preventDefault();
+                set(e.shiftKey ? Math.round((v + by) / 15) * 15 : v + by);
+                lookDragging = false;
+                if (onCommit) onCommit();
+            }
+        }, pic);
+        draw();
+        return h('div', { class: 'row slider' }, h('span', { class: 'lbl' }, label), h('div', { class: 'dial-cell' }, dial), out);
     }
 
     function checkbox(id, label, checked, onChange, extra) {
@@ -310,6 +403,8 @@
         const found = window.STARTER_STYLES.find((s) => s.id === st.id);
         const preset = S.settings.preset && Core.builtins.BUILTINS.find((p) => p.id === S.settings.preset);
         if (preset && found) return `${presetName(preset)} (${found.name})`;
+        // Whip without a preset: which of its patterns.
+        if (found && found.whip) return `${found.name} · ${t('whip.' + Core.whip.settings(look().whip).pattern)}`;
         return found ? found.name : '—';
     }
 
@@ -337,8 +432,11 @@
     function viewPack() {
         ensureFamilies();
         const presetGrid = h('div', { class: 'tiles' });
+        const whipGrid = h('div', { class: 'tiles' });
         const grid = h('div', { class: 'tiles' });
         const presetHead = h('p', { class: 'sub-head' }, t('style.presets'));
+        // Whip's presets after the others, under their own heading: twelve patterns of one style.
+        const whipHead = h('p', { class: 'sub-head' }, t('style.whipPresets'));
         const baseHead = h('p', { class: 'sub-head' }, t('style.bases'));
         const empty = h('p', { class: 'hint', hidden: true }, t('style.none'));
         const fill = () => {
@@ -347,14 +445,18 @@
                 const s = window.STARTER_STYLES.find((x) => x.id === styleId);
                 return !!s && (S.filter === 'All' || s.tags.includes(S.filter)) && (!q || name.toLowerCase().includes(q));
             };
-            const presets = Core.builtins.BUILTINS.filter((p) => match(p.style.id, presetName(p)));
+            const found = Core.builtins.BUILTINS.filter((p) => match(p.style.id, presetName(p)));
+            const presets = found.filter((p) => p.style.id !== 'whip');
+            const whips = found.filter((p) => p.style.id === 'whip');
             const list = window.STARTER_STYLES.filter((s) => match(s.id, s.name));
             presetGrid.replaceChildren(...presets.map(presetTile));
+            whipGrid.replaceChildren(...whips.map(presetTile));
             grid.replaceChildren(...list.map(tile));
             requestAnimationFrame(() => fitTiles(presetGrid));
             presetHead.hidden = presetGrid.hidden = !presets.length;
+            whipHead.hidden = whipGrid.hidden = !whips.length;
             baseHead.hidden = grid.hidden = !list.length;
-            empty.hidden = presets.length + list.length > 0;
+            empty.hidden = found.length + list.length > 0;
         };
         const chips = h('div', { class: 'chips' }, window.STYLE_FILTERS.map((f) => h('button', {
             type: 'button',
@@ -377,15 +479,15 @@
                         }
                     })),
                 chips),
-            presetHead, presetGrid, baseHead, grid, empty);
+            presetHead, presetGrid, whipHead, whipGrid, baseHead, grid, empty);
     }
 
-    // Shrinks a card's sample line that is wider than its stage.
+    // Shrinks a card's sample line that is wider than its stage (Whip's stills fit themselves).
     function fitTiles(root) {
         for (const stage of root.querySelectorAll('.stage')) {
             const line = stage.firstElementChild;
             const room = stage.clientWidth - 12;
-            if (line && line.offsetWidth > room) line.style.fontSize = `${((parseFloat(line.style.fontSize) * room) / line.offsetWidth).toFixed(2)}px`;
+            if (line && line.tagName !== 'CANVAS' && line.offsetWidth > room) line.style.fontSize = `${((parseFloat(line.style.fontSize) * room) / line.offsetWidth).toFixed(2)}px`;
         }
     }
 
@@ -402,6 +504,7 @@
     function presetTile(p) {
         const st = window.STARTER_STYLES.find((x) => x.id === p.style.id);
         const L = Object.assign({}, DEFAULT_LOOK, p.look);
+        if (st.whip) return whipPresetTile(p, st, L);
         const has = installed(L.font);
         const fStyle = fontStyleFor(L.font, L.fontStyle);
         // Sized as the preset sits in the frame, relative to the starter cards (Montserrat at 137);
@@ -416,33 +519,77 @@
         const words = one ? [all[1]] : st.typing ? [all[0], all[1].slice(0, Math.ceil(all[1].length / 2))] : all;
         const active = one ? 0 : 1;
         const on = S.settings.preset === p.id;
-        return h('button', {
+        const spans = words.map((w) => h('span', null, w));
+        // Moving (cardMotion): the spoken word walks the line, painted as the Deliver preview paints it.
+        const moving = lookPaint(L, st, false, (px * line) / (Core.fonts.LINE_PER_SIZE * (L.size / 1000) * 1080), line, false);
+        const paint = (a) => spans.forEach((sp, i) => {
+            const P = a < 0 ? paintLook : moving;
+            const now = a < 0 ? active : a;
+            sp.style.cssText = P.shade(P.word(i, now) + fontDecl(L.font, fStyle), i === now);
+        });
+        paint(-1);
+        const btn = h('button', {
             type: 'button', class: 'tile' + (on ? ' on' : ''), 'aria-pressed': String(on), 'data-preset': p.id,
             title: has ? '' : t('de.fontNotInstalled', { font: L.font }),
             onclick: () => applyPreset(p)
         },
         h('span', { class: 'stage', style: `background:${st.stage}` },
-            h('span', { style: paintLook.line + `font-size:${px.toFixed(2)}px;` },
-                ...words.map((w, i) => h('span', { style: paintLook.shade(paintLook.word(i, active) + fontDecl(L.font, fStyle), i === active) }, w)))),
+            h('span', { style: paintLook.line + `font-size:${px.toFixed(2)}px;` }, ...spans)),
         h('span', { class: 'tile-meta' }, h('span', { class: 'n' }, presetName(p)),
             h('span', { class: 't' + (has ? '' : ' missing') }, has ? `${st.name} · ${L.font}` : t('de.fontNotInstalled', { font: L.font }))));
+        // Typewriter's card shows a line caught mid-word; it stays a still.
+        return st.typing ? btn : wordCycle(btn, words.length, paint);
+    }
+
+    // A Whip preset's card: a still of its pattern placing the sample words in its font, colours
+    // and finish, the middle word painted with its brush (one word for a pattern that holds one).
+    function whipPresetTile(p, st, L) {
+        const font = L.font || 'Montserrat';
+        const has = installed(font);
+        const pattern = Core.whip.settings(L.whip).pattern;
+        const all = sampleWords(L.caseMode);
+        const b = p.brush || {};
+        const emph = b.color ? { color: b.color, size: b.size || 1, font: b.font || '', fontStyle: b.fontStyle || '' } : null;
+        const words = Core.whip.PATTERNS[pattern].maxWords < 3
+            ? [{ text: all[1], emph }]
+            : all.map((text, i) => ({ text, emph: i === 1 ? emph : null }));
+        const on = S.settings.preset === p.id;
+        const still = whipStill(L, words);
+        return cardMotion(h('button', {
+            type: 'button', class: 'tile' + (on ? ' on' : ''), 'aria-pressed': String(on), 'data-preset': p.id,
+            title: has ? '' : t('de.fontNotInstalled', { font }),
+            onclick: () => applyPreset(p)
+        },
+        h('span', { class: 'stage', style: `background:${st.stage}` }, still),
+        h('span', { class: 'tile-meta' }, h('span', { class: 'n' }, presetName(p)),
+            h('span', { class: 't' + (has ? '' : ' missing') }, has ? `${st.name} · ${font}` : t('de.fontNotInstalled', { font })))), still.play, still.pause);
     }
 
     function tile(s) {
         const st = S.settings.style;
         const on = st.source === 'pack' && st.id === s.id && !S.settings.preset;
         const word = (text, css) => h('span', { style: css }, text);
-        return h('button', {
+        // Whip: the sample words scattered at different sizes, as its Constellation pattern has them.
+        const whipLook = () => Object.assign({}, DEFAULT_LOOK, { whip: Object.assign({}, Core.whip.DEFAULTS, { pattern: 'constellation' }) });
+        const sample = t('style.sample').split('|');
+        const still = s.whip ? whipStill(whipLook(), sampleWords('upper').map((text, i) => ({ text, emph: i === 1 ? { color: '#FFD93B', size: 1 } : null }))) : null;
+        const spans = s.whip ? [] : sample.map((w, i) => (s.typing
+            // Typewriter: the line caught mid-word.
+            ? word(i === 1 ? w.slice(0, Math.ceil(w.length / 2)) : w, s.base + (i === 2 ? 'visibility:hidden;' : ''))
+            : word(w, i === 1 ? s.act : s.base)));
+        const btn = h('button', {
             type: 'button', class: 'tile' + (on ? ' on' : ''), 'aria-pressed': String(on),
             onclick: () => setStyle({ source: 'pack', id: s.id })
         },
-        h('span', { class: 'stage', style: `background:${s.stage}` },
-            h('span', { style: 'display:inline-block;' + (s.line || '') },
-                ...t('style.sample').split('|').map((w, i) => (s.typing
-                    // Typewriter: the line caught mid-word.
-                    ? word(i === 1 ? w.slice(0, Math.ceil(w.length / 2)) : w, s.base + (i === 2 ? 'visibility:hidden;' : ''))
-                    : word(w, i === 1 ? s.act : s.base))))),
+        h('span', { class: 'stage', style: `background:${s.stage}` }, still || h('span', { style: 'display:inline-block;' + (s.line || '') }, ...spans)),
         h('span', { class: 'tile-meta' }, h('span', { class: 'n' }, s.name), h('span', { class: 't' }, s.tags.map((tag) => t('tag.' + tag)).join(' · '))));
+        if (still) return cardMotion(btn, still.play, still.pause);
+        if (s.typing) return btn;
+        // The spoken word walks the line; Pop hides the words not yet spoken.
+        return wordCycle(btn, sample.length, (a) => spans.forEach((sp, i) => {
+            const now = a < 0 ? 1 : a;
+            sp.style.cssText = (i === now ? s.act : s.base) + (a >= 0 && s.id === 'pop' && i > a ? 'visibility:hidden;' : '');
+        }));
     }
 
     async function scanBin() {
@@ -1125,10 +1272,14 @@
         accent: '', box: null, pop: true, dim: 45, outline: { on: false, color: '#000000', width: 0.08 },
         // Drop shadow through Text+'s shadow element. Distance and softness in pixels at 1080 wide.
         shadow: { on: true, color: '#000000', opacity: 60, distance: 6, angle: 315, softness: 8 },
-        // Motion (starter styles): fade in/out in frames to a rest opacity (%); tracking that opens
-        // up from `from`% letter spacing to normal over the first `over`% of each caption.
+        // Motion (starter styles): fade in/out in frames to a rest opacity (%); letters drifting
+        // apart at `speed`% a second from `from`% (comp.js driftKeys; 12, the owner's pick, 2026-10-17),
+        // starting that much tight so they pass normal spacing about a second in.
         fade: { on: false, in: 4, out: 4, rest: 100 },
-        tracking: { on: false, from: 80, over: 100 }
+        tracking: { on: false, from: 88, speed: 12 },
+        // Whip (core/whip.js): its pattern, which way the words whip, how far and fast, motion
+        // blur, the pattern's size and place, letter spacing, glow and underline.
+        whip: Object.assign({}, Core.whip.DEFAULTS)
     };
     let pvTimers = [];
 
@@ -1139,6 +1290,13 @@
         for (const [k, v] of Object.entries(DEFAULT_LOOK)) {
             if (!(k in L)) L[k] = JSON.parse(JSON.stringify(v));
         }
+        // Tracking before 0.2.8 opened up over part of the caption (from, over); it drifts now.
+        if (L.tracking && L.tracking.speed == null) L.tracking = Object.assign({}, DEFAULT_LOOK.tracking, { on: !!L.tracking.on });
+        // Looks saved before a Whip setting existed, and presets that set only some of them.
+        if (!L.whip || typeof L.whip !== 'object') L.whip = Object.assign({}, Core.whip.DEFAULTS);
+        for (const [k, v] of Object.entries(Core.whip.DEFAULTS)) {
+            if (!(k in L.whip)) L.whip[k] = v;
+        }
         return L;
     }
 
@@ -1146,9 +1304,16 @@
         return S.deliverMode === 'modify' && S.modStyle ? S.modStyle : S.settings.style;
     }
 
+    // The style Deliver works with is Whip (its own preview, settings and per-word payload).
+    function isWhip() {
+        const ref = styleRef();
+        return ref.source === 'pack' && ref.id === 'whip';
+    }
+
     function compLook() {
         const L = look();
         const ref = styleRef();
+        const whip = isWhip();
         return {
             style: ref.source === 'pack' ? ref.id : null,
             size: L.size / 1000, x: L.x, y: L.y, caseMode: L.caseMode, strip: L.strip,
@@ -1158,14 +1323,41 @@
             accent: L.accent || undefined, box: L.box || undefined, pop: L.pop, dim: L.dim,
             outline: L.outline && L.outline.on ? Object.assign({}, L.outline) : undefined,
             fade: L.fade.on ? Object.assign({}, L.fade) : undefined,
-            tracking: L.tracking.on ? Object.assign({}, L.tracking) : undefined,
-            emphOverride: S.deliverMode === 'modify' && L.emphOn ? { color: L.emphColor, size: L.emphSize } : undefined
+            // Whip's words don't track; its fade is per word.
+            tracking: L.tracking.on && !whip ? Object.assign({}, L.tracking) : undefined, fps: fps(),
+            emphOverride: S.deliverMode === 'modify' && L.emphOn ? { color: L.emphColor, size: L.emphSize } : undefined,
+            whip: whip ? Core.whip.settings(L.whip) : undefined
         };
     }
 
+    // Drift's limit (comp.js driftKeys): the most letter spacing each caption's widest line takes and
+    // stays inside 94 % of the frame, measured with the caption's font and size the way the preview
+    // sizes it. Text+ moves each letter about 1.43 em per unit of spacing (render check, 2026-10-15).
+    const DRIFT_ROOM = 0.94;
+    let measureCtx = null;
+    function withDrift(captions) {
+        const L = look();
+        if (!(L.tracking.on && L.tracking.speed > 0) || styleRef().source !== 'pack' || isWhip()) return captions;
+        const family = L.font || 'Montserrat';
+        const style = L.font ? fontStyleFor(L.font, L.fontStyle) : 'ExtraBold';
+        const em = (Core.fonts.LINE_PER_SIZE * L.size / 1000) / lineOf(family, style);   // font size, in frame widths
+        const ctx = measureCtx || (measureCtx = document.createElement('canvas').getContext('2d'));
+        ctx.font = `${Core.fonts.isItalic(style) ? 'italic ' : ''}${Core.fonts.cssWeight(style)} 100px '${family}', sans-serif`;
+        return captions.map((c) => {
+            let max = Infinity;
+            for (const line of Core.phrases.lines(c)) {
+                const text = Core.textfx.apply(line, L.caseMode, L.strip);
+                if (text) max = Math.min(max, 1 + (DRIFT_ROOM - (ctx.measureText(text).width / 100) * em) / (1.43 * em * text.length));
+            }
+            return Number.isFinite(max) ? Object.assign({}, c, { driftMax: +max.toFixed(4) }) : c;
+        });
+    }
+
+    // Whip's clips run on after the last word, while there's room, for the words to whip out.
     function finalClips() {
         const L = look();
-        return Core.timing.finalize(S.data.captions, { fillGaps: L.fillGaps, maxGap: L.maxGap, minFrames: L.minFrames });
+        const tail = isWhip() ? (c) => Core.whip.tail(c.words.length, L.whip, c.words.length ? c.words[c.words.length - 1].end - c.words[c.words.length - 1].start : 0) : undefined;
+        return Core.timing.finalize(S.data.captions, { fillGaps: L.fillGaps, maxGap: L.maxGap, minFrames: L.minFrames, tail });
     }
 
     // The Deliver track belongs to the timeline (saved with its captions): a track number means
@@ -1186,6 +1378,8 @@
     // Deliver's own undo. Resolve doesn't record changes made through its scripting API, so its
     // Ctrl+Z can't take back a look; the panel keeps the history (Ctrl+Z / Ctrl+Y on Deliver, and
     // the buttons by Look). A step is everything a look is made of, as JSON; Live in viewer follows.
+    // Whip words moved (dragged in the preview, taken from Resolve) are steps too, kept as
+    // { captions, when }: the captions list to go back to, if the list is still `when`.
     const lookHist = { past: [], future: [] };
     let lookDragging = false;
 
@@ -1217,16 +1411,32 @@
         renderFooter();
     }
 
+    // Takes one step from `from` and records its opposite in `to`. A words step whose captions
+    // were changed since (in Edit, or a new build) is dropped: going back would undo that too.
+    function lookStep(from, to) {
+        while (from.length) {
+            const step = from.pop();
+            if (typeof step === 'string') {
+                to.push(lookSnapshot());
+                restoreLook(step);
+                return;
+            }
+            if (step.when !== S.data.captions) continue;
+            to.push({ captions: S.data.captions, when: step.captions });
+            S.data.captions = step.captions;
+            saveData();
+            renderScreen();
+            renderFooter();
+            return;
+        }
+    }
+
     function lookUndo() {
-        if (!lookHist.past.length) return;
-        lookHist.future.push(lookSnapshot());
-        restoreLook(lookHist.past.pop());
+        lookStep(lookHist.past, lookHist.future);
     }
 
     function lookRedo() {
-        if (!lookHist.future.length) return;
-        lookHist.past.push(lookSnapshot());
-        restoreLook(lookHist.future.pop());
+        lookStep(lookHist.future, lookHist.past);
     }
 
     // noUndo: not a look change to take back (the safe-zone mask is in Resolve's viewer too).
@@ -1359,9 +1569,9 @@
     }
 
     // Fade and tracking on the preview caption, looping with its words (ms): the fades in the
-    // timeline's frames, the rest opacity held between them, and the letters easing open from
-    // `from`% (comp.js trackingStart: Text+ spacing 1 − (1 − from) × 0.25, which moves each letter
-    // about 1.43em per unit).
+    // timeline's frames, the rest opacity held between them, and the letters drifting apart at their
+    // speed from `from`% (comp.js driftKeys: Text+ spacing 1 − (1 − from) × 0.25, which moves each
+    // letter about 1.43em per unit; the preview drifts in a straight line, without the limit).
     function motionPreview(el, L, ms) {
         if (!el.animate) return;
         const f = L.fade;
@@ -1381,12 +1591,621 @@
             ], { duration: ms, iterations: Infinity });
         }
         const tr = L.tracking;
-        if (tr && tr.on && tr.from < 100) {
-            el.animate([
-                { letterSpacing: `${((tr.from / 100 - 1) * 0.25 * 1.43).toFixed(3)}em`, offset: 0, easing: 'cubic-bezier(.5,1,.89,1)' },
-                { letterSpacing: '0em', offset: tr.over / 100 }, { letterSpacing: '0em', offset: 1 }
-            ], { duration: ms, iterations: Infinity });
+        if (tr && tr.on && tr.speed > 0) {
+            const em = (pct) => `${((pct / 100 - 1) * 0.25 * 1.43).toFixed(4)}em`;
+            el.animate([{ letterSpacing: em(tr.from) }, { letterSpacing: em(tr.from + tr.speed * ms / 1000) }], { duration: ms, iterations: Infinity });
         }
+    }
+
+    // ------------------------------------------------------------ Whip
+
+    const rgbaOf = (hex, alpha) => `rgba(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(',')},${alpha})`;
+    const round4 = (v) => Math.round(v * 10000) / 10000;
+
+    // The font a Whip word is drawn in: its emphasis font, else the caption's, else the style's.
+    function whipFont(w, L) {
+        const e = w.emph;
+        if (e && e.font) return { family: e.font, style: e.fontStyle || fontStyleFor(e.font) };
+        if (L.font) return { family: L.font, style: fontStyleFor(L.font, L.fontStyle) };
+        return { family: 'Montserrat', style: 'ExtraBold' };
+    }
+
+    // A canvas font: `px` pixels of the family, in the weight and slant of its Text+ style.
+    function canvasFont(f, px) {
+        return `${Core.fonts.isItalic(f.style) ? 'italic ' : ''}${Core.fonts.cssWeight(f.style)} ${px}px '${f.family}', sans-serif`;
+    }
+
+    // Fonts load as they're first used, and what's measured before then is the fallback font: a
+    // drawing waits for its fonts (fontsPending), and the measures go whenever fonts arrive.
+    const whipMeasures = new Map();
+    const fontLoads = new Map();
+    if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => whipMeasures.clear());
+
+    // A promise for those of the fonts (canvas font strings) still to load, or null: each loads
+    // once, and one that fails isn't waited for again.
+    function fontsPending(specs) {
+        if (!document.fonts || !document.fonts.load) return null;
+        const waits = [];
+        for (const spec of new Set(specs)) {
+            let load = fontLoads.get(spec);
+            if (load === true) continue;
+            if (!load) {
+                let ready = true;
+                try {
+                    ready = document.fonts.check(spec);
+                } catch (e) {
+                    // Not something the browser can look up: nothing to wait for.
+                }
+                if (ready) continue;
+                load = document.fonts.load(spec).catch(() => null).then(() => {
+                    fontLoads.set(spec, true);
+                    whipMeasures.clear();
+                });
+                fontLoads.set(spec, load);
+            }
+            waits.push(load);
+        }
+        return waits.length ? Promise.all(waits) : null;
+    }
+
+    // A word's metrics per pixel of font size, as Core.whip.layout takes them, in the font Text+
+    // draws it in with Whip's letter spacing: ink width and left overhang, ink above and below the
+    // baseline, the font's own line above and below it.
+    let whipCtx = null;
+    function whipMetrics(w, L) {
+        const f = whipFont(w, L);
+        const spacing = Core.whip.settings(L.whip).spacing;
+        const font = canvasFont(f, 100);
+        const key = `${font}|${spacing}|${w.text}`;
+        let m = whipMeasures.get(key);
+        if (!m) {
+            if (!whipCtx) whipCtx = document.createElement('canvas').getContext('2d');
+            const g = whipCtx;
+            g.font = font;
+            if ('letterSpacing' in g) g.letterSpacing = `${spacing}px`; // % of an em, at 100 px
+            const r = g.measureText(w.text);
+            const left = r.actualBoundingBoxLeft || 0;
+            m = {
+                w1: Math.max(0.05, (left + (r.actualBoundingBoxRight || r.width)) / 100), l1: left / 100,
+                asc1: r.actualBoundingBoxAscent / 100, desc1: r.actualBoundingBoxDescent / 100,
+                fasc1: (r.fontBoundingBoxAscent || r.actualBoundingBoxAscent * 1.25) / 100, fdesc1: (r.fontBoundingBoxDescent || 25) / 100
+            };
+            if (!Object.values(m).every(isFinite)) m = Core.whip.estimate(w.text, f.family);
+            whipMeasures.set(key, m);
+        }
+        return m;
+    }
+
+    // A caption's words as Whip places them: case and punctuation applied and empty ones dropped
+    // (as comp.js prepare does), each with its start, its index in the caption and where it was
+    // moved to (at). In Modify, Recolor emphasized words applies.
+    function whipWords(c, L) {
+        const over = S.deliverMode === 'modify' && L.emphOn ? { color: L.emphColor, size: L.emphSize } : null;
+        const out = [];
+        (c ? c.words : []).forEach((w, index) => {
+            const text = Core.textfx.apply(w.text, L.caseMode, L.strip);
+            if (text) out.push({ text, emph: w.emph ? Object.assign({}, w.emph, over) : null, at: w.at || null, start: w.start, index });
+        });
+        return out;
+    }
+
+    function whipLayout(words, index, L, W, H) {
+        return Core.whip.layout(words, { whip: L.whip, width: W, height: H, index, measure: (w) => whipMetrics(w, L) });
+    }
+
+    // A caption as Deliver sends it with Whip: with its index (some patterns change from caption to
+    // caption) and the metrics of its kept words, so the comp places them where the preview does.
+    function whipCaption(c, index) {
+        if (!isWhip()) return c;
+        const L = look();
+        return Object.assign({}, c, { whip: { index, metrics: whipWords(c, L).map((w) => whipMetrics(w, L)) } });
+    }
+
+    // A placed word drawn once, finished as the comp finishes it: box, glow, drop shadow, underline,
+    // outline and fill, at k canvas pixels per frame pixel (W: the frame's width, which outline and
+    // shadow sizes count in). Its ink centre is at (ox, oy). As in the comp, a glow takes the
+    // outline's place and an underline the box's (one Text+ shading element each).
+    function whipSprite(p, L, W, k) {
+        const w = Core.whip.settings(L.whip);
+        const px = p.px;
+        const unit = W / 1080; // shadow distance and softness: pixels at 1080 wide
+        const o = L.outline && L.outline.on && !w.glow ? L.outline : null;
+        // Text+ Thickness counts in text sizes; a canvas stroke straddles the edge, so twice as wide.
+        const stroke = o ? 2 * o.width * Core.whip.textPlus(p, W, W).size * W : 0;
+        const sh = L.shadow && L.shadow.on ? L.shadow : null;
+        const reach = Math.max(stroke, w.glow ? 0.5 * px : 0, sh ? (sh.distance + 2 * sh.softness) * unit : 0) + 0.45 * px + 2;
+        const hw = p.width / 2 + reach;
+        const hh = Math.max(p.fasc, p.fdesc, p.asc, p.desc) + reach;
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.ceil(2 * hw * k));
+        c.height = Math.max(1, Math.ceil(2 * hh * k));
+        const g = c.getContext('2d');
+        g.setTransform(k, 0, 0, k, hw * k, hh * k);
+        const x = -p.width / 2 + p.l;
+        const base = (p.asc - p.desc) / 2;
+        g.font = canvasFont(whipFont(p, L), px);
+        if ('letterSpacing' in g) g.letterSpacing = `${(w.spacing / 100) * px}px`;
+        g.textBaseline = 'alphabetic';
+        g.textAlign = 'left';
+        g.lineJoin = 'round';
+        // A box behind the word, over the font's line like Text+'s; it casts no shadow.
+        if (L.box && !w.bar) {
+            const bw = p.width / 2 + 0.15 * px;
+            const top = base - p.fasc - 0.05 * px;
+            const bh = p.fasc + p.fdesc + 0.1 * px;
+            g.fillStyle = rgbaOf(L.box.color, L.box.opacity / 100);
+            g.beginPath();
+            if (g.roundRect) g.roundRect(-bw, top, 2 * bw, bh, 0.1 * px);
+            else g.rect(-bw, top, 2 * bw, bh);
+            g.fill();
+        }
+        if (w.glow) {
+            g.save();
+            g.shadowColor = rgbaOf(w.glow, 0.9);
+            g.shadowBlur = 0.3 * px * k;
+            g.fillStyle = w.glow;
+            g.fillText(p.text, x, base);
+            g.fillText(p.text, x, base);
+            g.restore();
+        }
+        // Canvas shadows ignore the transform, so their offsets and blur are in canvas pixels.
+        if (sh) {
+            const a = (sh.angle * Math.PI) / 180;
+            g.save();
+            g.shadowColor = rgbaOf(sh.color, sh.opacity / 100);
+            g.shadowBlur = sh.softness * unit * k;
+            g.shadowOffsetX = Math.cos(a) * sh.distance * unit * k;
+            g.shadowOffsetY = -Math.sin(a) * sh.distance * unit * k;
+            g.fillStyle = g.strokeStyle = g.shadowColor;
+            if (stroke) {
+                g.lineWidth = stroke;
+                g.strokeText(p.text, x, base);
+            }
+            g.fillText(p.text, x, base);
+            g.restore();
+        }
+        if (w.bar) {
+            g.fillStyle = w.bar;
+            g.fillRect(-p.width / 2, base + 0.2 * px, p.width, 0.08 * px);
+        }
+        if (stroke) {
+            g.lineWidth = stroke;
+            g.strokeStyle = o.color;
+            g.strokeText(p.text, x, base);
+        }
+        g.fillStyle = (p.emph && p.emph.color) || L.color || '#FFFFFF';
+        g.fillText(p.text, x, base);
+        return { c, ox: hw * k, oy: hh * k };
+    }
+
+    // A sprite with its ink centre at canvas pixel (x, y), tilted (degrees, counter-clockwise).
+    function blit(g, spr, x, y, tilt, alpha) {
+        const r = (-(tilt || 0) * Math.PI) / 180;
+        const cos = Math.cos(r);
+        const sin = Math.sin(r);
+        g.globalAlpha = Math.max(0, Math.min(1, alpha));
+        g.setTransform(cos, sin, -sin, cos, x, y);
+        g.drawImage(spr.c, -spr.ox, -spr.oy);
+    }
+
+    // A still of Whip words at rest for a gallery card, each with a short streak back the way it
+    // whipped in. Laid out by the look's pattern on a 9:16 frame and fitted into the card's stage,
+    // which is wider than the frame: the words are drawn closer together vertically as long as no
+    // two touch. words: [{ text, emph }]. Drawn once on screen, again when its fonts arrive.
+    // canvas.play() / canvas.pause() run its words' whips in a loop (cardMotion) and back to the still.
+    function whipStill(L, words) {
+        const canvas = h('canvas', { class: 'whip-still', 'aria-hidden': 'true' });
+        const W = Core.whip.DESIGN.width;
+        const H = Core.whip.DESIGN.height;
+        const PAD = 8;
+        let scene = null; // what draw() worked out, for the loop
+        const draw = () => {
+            const cw = canvas.clientWidth;
+            const ch = canvas.clientHeight;
+            if (!canvas.isConnected || !cw || !ch) return;
+            const dpr = Math.min(2, window.devicePixelRatio || 1);
+            canvas.width = Math.round(cw * dpr);
+            canvas.height = Math.round(ch * dpr);
+            const placed = whipLayout(words, 0, L, W, H);
+            if (!placed.length) return;
+            const boxes = placed.map((p) => [p.cx - p.width / 2, p.cy - (p.asc + p.desc) / 2, p.cx + p.width / 2, p.cy + (p.asc + p.desc) / 2]);
+            const mid = (Math.min(...boxes.map((b) => b[1])) + Math.max(...boxes.map((b) => b[3]))) / 2;
+            const gap = (0.12 * placed.reduce((a, p) => a + p.px, 0)) / placed.length;
+            // No word bigger than the other cards' (Punch's one word would fill the stage).
+            const most = 46 / Math.max(...placed.map((p) => p.px));
+            let fit = null;
+            for (const q of [1, 0.85, 0.7, 0.55, 0.4]) {
+                const bs = boxes.map(([x0, y0, x1, y1]) => {
+                    const c = mid + ((y0 + y1) / 2 - mid) * q;
+                    return [x0, c - (y1 - y0) / 2, x1, c + (y1 - y0) / 2];
+                });
+                const touch = bs.some((a, i) => bs.some((b, j) => j > i && a[0] < b[2] && b[0] < a[2] && a[1] - gap < b[3] && b[1] - gap < a[3]));
+                if (q < 1 && touch) break;
+                const x0 = Math.min(...bs.map((b) => b[0]));
+                const x1 = Math.max(...bs.map((b) => b[2]));
+                const y0 = Math.min(...bs.map((b) => b[1]));
+                const y1 = Math.max(...bs.map((b) => b[3]));
+                const s = Math.min(most, (cw - 2 * PAD) / (x1 - x0), (ch - 2 * PAD) / (y1 - y0));
+                if (!fit || s > fit.s) fit = { s, q, x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
+            }
+            const g = canvas.getContext('2d');
+            const k = fit.s * dpr;
+            const sprites = placed.map((p) => whipSprite(p, L, W, k));
+            // Frame pixels to card pixels, rows drawn closer as above.
+            const at = (x, y) => [(cw / 2 + (x - fit.x) * fit.s) * dpr, (ch / 2 + (mid + (y - mid) * fit.q - fit.y) * fit.s) * dpr];
+            scene = { g, placed, sprites, at };
+            if (timer) return; // playing: the loop draws
+            placed.forEach((p, i) => {
+                const [x, y] = at(p.cx, p.cy);
+                const dx = Math.cos((p.in * Math.PI) / 180) * p.px * fit.s * dpr;
+                const dy = -Math.sin((p.in * Math.PI) / 180) * p.px * fit.s * dpr;
+                [0.07, 0.13, 0.22].forEach((alpha, j) => blit(g, sprites[i], x + dx * 0.16 * (3 - j), y + dy * 0.16 * (3 - j), p.tilt, alpha));
+                blit(g, sprites[i], x, y, p.tilt, 1);
+            });
+        };
+        requestAnimationFrame(draw);
+        const wait = fontsPending(words.map((w) => canvasFont(whipFont(w, L), 100)));
+        if (wait) wait.then(() => requestAnimationFrame(draw));
+
+        // The loop: the words spoken 7 frames apart, resting, whipping out, a short gap, again; at
+        // 30 fps and drawn only when the frame changes, with a 4-sample blur (enough at this size).
+        let timer = null;
+        let keys = null;
+        let len = 0;
+        const frame = (f) => {
+            const { g, placed, sprites, at } = scene;
+            g.setTransform(1, 0, 0, 1, 0, 0);
+            g.globalAlpha = 1;
+            g.clearRect(0, 0, canvas.width, canvas.height);
+            const shutter = Core.whip.settings(L.whip).shutter / 360;
+            placed.forEach((p, i) => {
+                const now = Core.whip.wordAt(p, f, keys[i]);
+                if (!now) return;
+                const n = shutter && now.moving ? 4 : 1;
+                for (let j = 0; j < n; j++) {
+                    const q = n === 1 ? now : Core.whip.wordAt(p, f + (j / (n - 1) - 0.5) * shutter, keys[i]);
+                    if (q) blit(g, sprites[i], ...at(q.x, q.y), p.tilt, q.opacity / n);
+                }
+            });
+        };
+        canvas.play = () => {
+            if (timer || !scene) return;
+            const starts = scene.placed.map((p, i) => i * 7);
+            len = starts[starts.length - 1] + Core.whip.tail(starts.length, L.whip, 0) + 24;
+            keys = Core.whip.animate(scene.placed, starts, len, L.whip, L.fade && L.fade.on ? L.fade : null);
+            const t0 = performance.now();
+            let last = -1;
+            const tick = (now) => {
+                if (!timer) return;
+                if (!canvas.isConnected) {
+                    timer = null;
+                    return;
+                }
+                const f = Math.floor(((now - t0) / 1000) * 30) % (len + 8);
+                if (f !== last) frame((last = f));
+                timer = requestAnimationFrame(tick);
+            };
+            timer = requestAnimationFrame(tick);
+        };
+        canvas.pause = () => {
+            if (!timer) return;
+            cancelAnimationFrame(timer);
+            timer = null;
+            draw();
+        };
+        return canvas;
+    }
+
+    // Gallery cards move while the pointer (or keyboard focus) is on them, and the chosen one keeps
+    // playing while the panel has focus. Stills otherwise, and always with reduced motion: nothing
+    // runs while you work in Resolve. start/stop: the card's own animation.
+    const cards = new Set();
+    const reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    function cardMotion(btn, start, stop) {
+        const card = { btn, start, stop, over: false, running: false };
+        card.sync = () => {
+            const want = btn.isConnected && !reducedMotion() && !document.hidden &&
+                (card.over || (btn.classList.contains('on') && document.hasFocus()));
+            if (want !== card.running) {
+                card.running = want;
+                if (want) start();
+                else stop();
+            }
+        };
+        const set = (over) => () => {
+            card.over = over;
+            card.sync();
+        };
+        btn.addEventListener('pointerenter', set(true));
+        btn.addEventListener('pointerleave', set(false));
+        btn.addEventListener('focus', set(true));
+        btn.addEventListener('blur', set(false));
+        syncCards();
+        cards.add(card);
+        requestAnimationFrame(card.sync);
+        return btn;
+    }
+    function syncCards() {
+        for (const c of cards) {
+            if (c.btn.isConnected) c.sync();
+            else {
+                if (c.running) c.stop();
+                cards.delete(c);
+            }
+        }
+    }
+    window.addEventListener('focus', syncCards);
+    window.addEventListener('blur', syncCards);
+    document.addEventListener('visibilitychange', syncCards);
+
+    // A classic card's motion: the spoken word moves along the sample line (Pop pops it), as the
+    // Deliver preview does. paint(active) repaints the words; -1 puts the still back.
+    function wordCycle(btn, n, paint) {
+        let timer = null;
+        let active = 0;
+        return cardMotion(btn, () => {
+            active = 0;
+            paint(active);
+            timer = setInterval(() => paint((active = (active + 1) % n)), 450);
+        }, () => {
+            clearInterval(timer);
+            timer = null;
+            paint(-1);
+        });
+    }
+
+    // Whip's preview clock: frames count from t0, kept outside the preview so that a redraw (every
+    // slider step) plays on instead of starting the caption over. Another caption starts it again.
+    const whipClock = { t0: 0, idx: null };
+    const BLUR_SAMPLES = 9;
+    const WHIP_GAP = 12; // empty frames between loops
+
+    // Whip's preview: the caption shown, its words whipping in and out on a canvas over the
+    // stand-in speaker in their real timing, looped, with the motion blur the comp gives them.
+    // Drag a word to give it a place of its own (word.at); the loop holds on the frame where every
+    // word is in while it's dragged. With reduced motion, that frame only.
+    function whipPreview(W, H, fw, fh, portrait, L) {
+        const i = S.pvIdx;
+        const c = S.data.captions[i];
+        const clip = finalClips()[i] || { start: 0, end: 1 };
+        const words = whipWords(c, L);
+        const placed = whipLayout(words, i, L, W, H);
+        const starts = words.map((w) => Math.max(0, w.start - clip.start));
+        const len = Math.max(1, clip.end - clip.start);
+        const keys = Core.whip.animate(placed, starts, len, L.whip, L.fade.on ? L.fade : null);
+        const rest = Core.whip.restFrame(starts, len, L.whip);
+        const shutter = Core.whip.settings(L.whip).shutter / 360;
+        const still = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+        const rate = fps();
+        if (whipClock.idx !== i) {
+            whipClock.idx = i;
+            whipClock.t0 = performance.now();
+        }
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const K = (fw / W) * dpr; // canvas pixels per frame pixel
+        const canvas = h('canvas', { class: 'pv-canvas', width: String(Math.round(fw * dpr)), height: String(Math.round(fh * dpr)), role: 'img', 'aria-label': t('whip.dragHint') });
+        const ctx = canvas.getContext('2d');
+        const sprites = [];
+        const sprite = (k) => sprites[k] || (sprites[k] = whipSprite(placed[k], L, W, K));
+        let layer = null;
+        const draw = (f) => {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.globalAlpha = 1;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            let acc = null;
+            placed.forEach((p, k) => {
+                const now = Core.whip.wordAt(p, f, keys[k]);
+                if (!now) return;
+                if (!shutter || !now.moving) {
+                    blit(ctx, sprite(k), now.x * K, now.y * K, p.tilt, now.opacity);
+                    return;
+                }
+                if (!acc) {
+                    if (!layer) {
+                        layer = document.createElement('canvas');
+                        layer.width = canvas.width;
+                        layer.height = canvas.height;
+                    }
+                    acc = layer.getContext('2d');
+                    acc.setTransform(1, 0, 0, 1, 0, 0);
+                    acc.globalAlpha = 1;
+                    acc.globalCompositeOperation = 'source-over';
+                    acc.clearRect(0, 0, layer.width, layer.height);
+                    acc.globalCompositeOperation = 'lighter';
+                }
+                // Box-filter motion blur: the average of the word's places while the shutter is open.
+                for (let j = 0; j < BLUR_SAMPLES; j++) {
+                    const q = Core.whip.wordAt(p, f + (j / (BLUR_SAMPLES - 1) - 0.5) * shutter, keys[k]);
+                    if (q) blit(acc, sprite(k), q.x * K, q.y * K, p.tilt, q.opacity / BLUR_SAMPLES);
+                }
+            });
+            if (acc) {
+                acc.globalCompositeOperation = 'source-over';
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.globalAlpha = 1;
+                ctx.drawImage(layer, 0, 0);
+            }
+        };
+
+        // Dragging: a word is picked by its box at rest (tilt aside), 6 screen pixels of slack.
+        let drag = null;
+        let last = null;
+        const slack = (6 * W) / fw;
+        const toFrame = (e) => {
+            const b = canvas.getBoundingClientRect();
+            return [((e.clientX - b.left) * W) / b.width, ((e.clientY - b.top) * H) / b.height];
+        };
+        const hit = (x, y) => {
+            for (let k = placed.length - 1; k >= 0; k--) {
+                const p = placed[k];
+                if (Math.abs(x - p.cx) <= p.width / 2 + slack && Math.abs(y - p.cy) <= (p.asc + p.desc) / 2 + slack) return k;
+            }
+            return -1;
+        };
+        canvas.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            const [x, y] = toFrame(e);
+            const k = hit(x, y);
+            if (k < 0) return;
+            e.preventDefault();
+            canvas.setPointerCapture(e.pointerId);
+            const p = placed[k];
+            drag = { k, dx: x - p.cx, dy: y - p.cy, x0: p.cx, y0: p.cy, moved: false };
+            canvas.classList.add('dragging');
+            draw(rest);
+        });
+        // Redraws only the canvas while dragging: the rest of the screen stays as it is until the drop.
+        canvas.addEventListener('pointermove', (e) => {
+            const [x, y] = toFrame(e);
+            if (!drag) {
+                canvas.classList.toggle('over', hit(x, y) >= 0);
+                return;
+            }
+            const p = placed[drag.k];
+            p.cx = Math.min(W, Math.max(0, x - drag.dx));
+            p.cy = Math.min(H, Math.max(0, y - drag.dy));
+            drag.moved = drag.moved || Math.hypot(p.cx - drag.x0, p.cy - drag.y0) > 1;
+            draw(rest);
+        });
+        const drop = (keep) => {
+            if (!drag) return;
+            const d = drag;
+            const p = placed[d.k];
+            drag = null;
+            canvas.classList.remove('dragging');
+            if (keep && d.moved) {
+                const at = { x: round4(p.cx / W), y: round4(p.cy / H) };
+                commitPlaces(withPlaces((ci, wi) => (ci === i && wi === words[d.k].index ? at : undefined)));
+                return;
+            }
+            p.cx = d.x0;
+            p.cy = d.y0;
+            last = null;
+            if (still) draw(rest);
+        };
+        canvas.addEventListener('pointerup', () => drop(true));
+        canvas.addEventListener('pointercancel', () => drop(false));
+
+        // The loop runs while the canvas is on screen: it isn't yet when built, and stops once replaced.
+        let seen = false;
+        let waits = 0;
+        const tick = (now) => {
+            if (!canvas.isConnected) {
+                if (!seen && ++waits < 30) requestAnimationFrame(tick);
+                return;
+            }
+            seen = true;
+            if (!drag) {
+                const f = still ? rest : Math.floor(((Math.max(0, now - whipClock.t0) / 1000) * rate) % (len + WHIP_GAP));
+                if (f !== last) {
+                    last = f;
+                    draw(f);
+                }
+            }
+            if (!still) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+
+        const guide = portrait && L.guide ? h('img', { class: 'pv-guide', src: 'assets/guide-9x16.svg', alt: '' }) : null;
+        const frame = h('div', { class: 'pv-frame', style: `width:${fw}px;height:${fh}px` },
+            h('img', { class: 'pv-figure', src: 'assets/silhouette.svg', alt: '' }), guide, canvas);
+        const wrap = h('div', { class: 'pv-wrap' }, frame, words.length ? h('p', { class: 'hint', style: 'margin:0;text-align:center' }, t('whip.dragHint')) : null);
+        // Measured in a fallback font until its own arrives: then laid out again.
+        const wait = fontsPending(words.map((w) => canvasFont(whipFont(w, L), 100)));
+        if (wait) {
+            wait.then(() => {
+                if (wrap.isConnected && !drag) wrap.replaceWith(previewFrame());
+            });
+        }
+        return wrap;
+    }
+
+    // A new captions list with `at` changed on some words, copied on write so the list before
+    // stays whole for undo. place(ci, wi, word) → the word's new `at`, null to clear it, undefined
+    // to leave it. The same list when nothing changes.
+    function withPlaces(place) {
+        let any = false;
+        const next = S.data.captions.map((c, ci) => {
+            let changed = false;
+            const words = c.words.map((w, wi) => {
+                const at = place(ci, wi, w);
+                if (at === undefined || (at === null && !w.at)) return w;
+                changed = true;
+                const nw = Object.assign({}, w);
+                if (at) nw.at = at;
+                else delete nw.at;
+                return nw;
+            });
+            if (!changed) return c;
+            any = true;
+            return Object.assign({}, c, { words });
+        });
+        return any ? next : S.data.captions;
+    }
+
+    // Whip words moved by hand: saved with the captions, one step of Deliver's undo (lookHist), and
+    // Live in viewer shows them in Resolve.
+    function commitPlaces(next) {
+        if (next === S.data.captions) return;
+        lookHist.past.push({ captions: S.data.captions, when: next });
+        if (lookHist.past.length > 100) lookHist.past.shift();
+        lookHist.future = [];
+        S.data.captions = next;
+        S.data.edited = true;
+        saveData();
+        renderScreen();
+        renderFooter();
+        scheduleLive();
+    }
+
+    // Words moved in Resolve's viewer: reads the Text+ Centers of the test caption there and, if it
+    // is the caption shown here, keeps every word that moved as a place of its own.
+    async function whipFromResolve() {
+        const i = S.pvIdx;
+        const c = S.data.captions[i];
+        const tl = timeline();
+        if (!c || !tl) return;
+        try {
+            const got = (await call('whipPositions')) || {};
+            if (S.data.captions[i] !== c) return; // the captions changed meanwhile
+            const L = look();
+            const words = whipWords(c, L);
+            const texts = Array.isArray(got.texts) ? got.texts : [];
+            const origins = Array.isArray(got.origins) ? got.origins : [];
+            if (texts.length !== words.length || texts.some((x, k) => x !== words[k].text)) {
+                flash(t('whip.notThis', { n: i + 1 }), true);
+                return;
+            }
+            // A word whose position was keyed in Resolve comes back null and is left alone.
+            if (origins.length !== words.length || !origins.every((o) => o === null || (Array.isArray(o) && isFinite(o[0]) && isFinite(o[1])))) {
+                flash(t('err.positionsRead'), true);
+                return;
+            }
+            const placed = whipLayout(words, i, L, tl.width, tl.height);
+            const moved = new Map();
+            origins.forEach((o, k) => {
+                if (!o) return;
+                const at = Core.whip.fromTextPlus(o, placed[k], tl.width, tl.height);
+                // Words left where the comp put them stay with the pattern.
+                if (Math.abs(at.x - placed[k].cx / tl.width) > 0.0015 || Math.abs(at.y - placed[k].cy / tl.height) > 0.0015) {
+                    moved.set(words[k].index, { x: round4(at.x), y: round4(at.y) });
+                }
+            });
+            if (!moved.size) {
+                flash(t('whip.takenNone'));
+                return;
+            }
+            commitPlaces(withPlaces((ci, wi) => (ci === i && moved.has(wi) ? moved.get(wi) : undefined)));
+            flash(t(moved.size === 1 ? 'whip.takenOne' : 'whip.taken', { n: moved.size, c: i + 1 }));
+        } catch (e) {
+            flash(e.message, true);
+        }
+    }
+
+    // Every moved word, in every caption, back in its pattern.
+    function whipResetPlaces() {
+        commitPlaces(withPlaces((ci, wi, w) => (w.at ? null : undefined)));
+        flash(t('whip.resetDone'));
     }
 
     // The preview: the caption as it will sit in the frame, cycling through its words.
@@ -1400,6 +2219,7 @@
         const L = look();
         const ref = styleRef();
         const st = ref.source === 'pack' ? window.STARTER_STYLES.find((s) => s.id === ref.id) : null;
+        if (st && st.whip) return whipPreview(W, H, fw, fh, portrait, L);
         // A bin template keeps its own font and colour; with "keep size and position" its own size too,
         // which the preview can't know, so the overflow check would measure the wrong thing.
         const bin = ref.source === 'bin';
@@ -1495,12 +2315,18 @@
     }
 
     // A Deliver section heading with a reset button that puts just that section's settings back
-    // to DEFAULT_LOOK (one undo step); greyed out while they already are.
+    // to DEFAULT_LOOK (one undo step); greyed out while they already are. sub: { key, keys } puts
+    // back some keys inside one nested setting too (Whip's, split between Look and Whip).
     const LOOK_KEYS = ['keepTemplate', 'font', 'fontStyle', 'color', 'size', 'x', 'y', 'caseMode', 'strip'];
-    function resetSection(title, keys) {
+    function resetSection(title, keys, sub) {
         const L = look();
         const defaults = Object.fromEntries(keys.map((k) => [k, k in DEFAULT_LOOK ? JSON.parse(JSON.stringify(DEFAULT_LOOK[k])) : '']));
-        const same = keys.every((k) => JSON.stringify(L[k] == null ? '' : L[k]) === JSON.stringify(defaults[k]));
+        let same = keys.every((k) => JSON.stringify(L[k] == null ? '' : L[k]) === JSON.stringify(defaults[k]));
+        if (sub) {
+            const D = DEFAULT_LOOK[sub.key];
+            same = same && sub.keys.every((k) => L[sub.key][k] === D[k]);
+            defaults[sub.key] = Object.assign({}, L[sub.key], Object.fromEntries(sub.keys.map((k) => [k, D[k]])));
+        }
         return h('div', { class: 'section-row' }, section(title),
             // A reset arrow like the one on Resolve's Inspector sections.
             h('button', { type: 'button', class: 'icon-btn reset', disabled: same, title: t('de.resetTitle', { section: title }), 'aria-label': t('de.resetTitle', { section: title }), onclick: () => setLook(defaults) }, icon('reset', 16)));
@@ -1513,8 +2339,12 @@
         // What a bin template takes from here: text, emphasis, shadow, and size/position unless kept.
         const bin = ref.source === 'bin';
         const kept = bin && L.keepTemplate;
+        // Whip's Size and Position size and place its whole pattern (look.whip), so they reset there.
+        const whip = isWhip();
+        const whipLive = (key) => (v) => livePreview({ whip: Object.assign({}, look().whip, { [key]: v }) });
         return [
-            resetSection(t('de.look'), LOOK_KEYS),
+            whip ? resetSection(t('de.look'), LOOK_KEYS.filter((k) => !['size', 'x', 'y'].includes(k)), { key: 'whip', keys: ['scale', 'x', 'y'] })
+                : resetSection(t('de.look'), LOOK_KEYS),
             h('div', { class: 'row' }, h('label', { class: 'lbl', for: 'lkPreset' }, t('de.preset')),
                 select('lkPreset', [['', t('de.presetPick')]]
                     .concat(saved.length ? [{ group: t('se.yourPresets'), options: saved.map((p, i) => [`u${i}`, p.name]) }] : [])
@@ -1531,7 +2361,11 @@
                 : null,
             bin ? null : h('div', { class: 'row' }, h('span', { class: 'lbl' }, t('de.textColor')),
                 colorSwatches(TEXT_COLORS, L.color, (col) => setLook({ color: col }), t('de.textColor'), true)),
-            kept ? null : [
+            kept ? null : whip ? [
+                slider('lkSize', t('ed.size'), 30, 200, 1, L.whip.scale, whipLive('scale'), saveSettings),
+                slider('lkX', t('de.posX'), 0, 100, 1, L.whip.x, whipLive('x'), saveSettings),
+                slider('lkY', t('de.posY'), 0, 100, 1, L.whip.y, whipLive('y'), saveSettings)
+            ] : [
                 slider('lkSize', t('ed.size'), 30, 200, 1, L.size, (v) => livePreview({ size: v }), saveSettings),
                 slider('lkX', t('de.posX'), 0, 100, 1, L.x, (v) => livePreview({ x: v }), saveSettings),
                 slider('lkY', t('de.posY'), 0, 100, 1, L.y, (v) => livePreview({ y: v }), saveSettings)
@@ -1556,23 +2390,24 @@
     }
 
     // Fade and tracking, built into the starter styles' comps (a bin template keeps its own motion).
+    // Whip fades each word on its own and has no tracking.
     function motionSettings(L, ref) {
         if (ref.source !== 'pack') return null;
         const f = L.fade;
         const tr = L.tracking;
+        const whip = ref.id === 'whip';
         return [
-            resetSection(t('de.motion'), ['fade', 'tracking']),
+            resetSection(t('de.motion'), whip ? ['fade'] : ['fade', 'tracking']),
             checkbox('fadeOn', t('de.fadeOn'), f.on, (v) => setLook({ fade: Object.assign({}, f, { on: v }) })),
+            whip ? h('p', { class: 'hint', style: 'margin-top:2px' }, t('whip.fadeHint')) : null,
             f.on ? [
                 slider('lkFadeIn', t('de.fadeIn'), 0, 30, 1, f.in, (v) => livePreview({ fade: Object.assign(f, { in: v }) }), saveSettings),
                 slider('lkFadeOut', t('de.fadeOut'), 0, 30, 1, f.out, (v) => livePreview({ fade: Object.assign(f, { out: v }) }), saveSettings),
                 slider('lkRest', t('de.rest'), 10, 100, 1, f.rest, (v) => livePreview({ fade: Object.assign(f, { rest: v }) }), saveSettings)
             ] : null,
-            checkbox('trackOn', t('de.trackOn'), tr.on, (v) => setLook({ tracking: Object.assign({}, tr, { on: v }) })),
-            tr.on ? [
-                slider('lkTrackFrom', t('de.trackFrom'), 50, 100, 1, tr.from, (v) => livePreview({ tracking: Object.assign(tr, { from: v }) }), saveSettings),
-                slider('lkTrackOver', t('de.trackOver'), 10, 100, 1, tr.over, (v) => livePreview({ tracking: Object.assign(tr, { over: v }) }), saveSettings)
-            ] : null
+            whip ? null : checkbox('trackOn', t('de.trackOn'), tr.on, (v) => setLook({ tracking: Object.assign({}, tr, { on: v }) })),
+            // One speed: the drift starts that much tight, so it passes normal spacing about a second in.
+            tr.on && !whip ? slider('lkTrackSpeed', t('de.trackSpeed'), 1, 25, 1, tr.speed, (v) => livePreview({ tracking: Object.assign(tr, { speed: v, from: 100 - v }) }), saveSettings) : null
         ];
     }
 
@@ -1583,20 +2418,23 @@
 
     // The starter style's own settings, only those the chosen style uses. A bin template keeps
     // its own design, so it gets none.
+    // Whip's emphasis colour comes from the brush, so it has no accent; its box is per word.
     function styleSettings(L, ref) {
         if (ref.source !== 'pack') return null;
         const id = ref.id;
-        const accent = !['plain', 'typewriter'].includes(id);
-        const box = id === 'ribbon' || id === 'plain';
+        const accent = !['plain', 'typewriter', 'whip'].includes(id);
+        const boxOn = id === 'plain' || id === 'whip';
+        const box = id === 'ribbon' || boxOn;
         const o = L.outline;
-        const setBox = (patch) => setLook({ box: Object.assign({ color: id === 'plain' ? '#000000' : '#111111', opacity: 100 }, L.box || {}, patch) });
+        const setBox = (patch) => setLook({ box: Object.assign({ color: id === 'ribbon' ? '#111111' : '#000000', opacity: 100 }, L.box || {}, patch) });
         return [
+            id === 'whip' ? whipSettings(L) : null,
             resetSection(t('de.styleSettings'), ['accent', 'box', 'pop', 'dim', 'outline']),
             accent ? h('div', { class: 'row' }, h('span', { class: 'lbl' }, t('de.accent')),
                 colorSwatches(ACCENT_COLORS, L.accent, (col) => setLook({ accent: col }), t('de.accent'), true)) : null,
             id === 'pop' ? checkbox('popOn', t('de.popOn'), L.pop !== false, (v) => setLook({ pop: v })) : null,
             id === 'spotlight' ? slider('lkDim', t('de.dim'), 0, 100, 1, L.dim, (v) => livePreview({ dim: v }), saveSettings) : null,
-            id === 'plain' ? checkbox('boxOn', t('de.boxOn'), !!L.box, (v) => setLook({ box: v ? { color: '#000000', opacity: 62 } : null })) : null,
+            boxOn ? checkbox('boxOn', t('de.boxOn'), !!L.box, (v) => setLook({ box: v ? { color: '#000000', opacity: 62 } : null })) : null,
             box && (L.box || id === 'ribbon') ? [
                 h('div', { class: 'row' }, h('span', { class: 'lbl' }, t('de.boxColor')),
                     colorSwatches(BOX_COLORS, L.box ? L.box.color : '#111111', (col) => setBox({ color: col }), t('de.boxColor'), false)),
@@ -1615,14 +2453,65 @@
         ];
     }
 
-    // Preset swatches plus a custom colour picker. withDefault adds a "style default" swatch ('').
-    function colorSwatches(colors, value, onPick, label, withDefault) {
+    const GLOW_COLORS = ['', '#6FB7FF', '#FF3EA5', '#FFD93B', '#2EE86B', '#FFFFFF'];
+    const BAR_COLORS = ['', '#FF8A1F', '#FFD93B', '#2EE86B', '#FF3EA5', '#FFFFFF'];
+    // Whip's own section resets these; its size and position belong to Look.
+    const WHIP_KEYS = Object.keys(Core.whip.DEFAULTS).filter((k) => !['scale', 'x', 'y'].includes(k));
+
+    // Whip: where the words go, which way they whip in and out, how far and fast, the motion blur,
+    // letter spacing, glow and underline; and words moved by hand (the preview, Resolve's viewer).
+    function whipSettings(L) {
+        const w = L.whip;
+        const set = (patch) => setLook({ whip: Object.assign({}, look().whip, patch) });
+        const live = (key) => (v) => livePreview({ whip: Object.assign({}, look().whip, { [key]: v }) });
+        const pattern = Core.whip.PATTERNS[w.pattern] || Core.whip.PATTERNS[Core.whip.DEFAULTS.pattern];
+        const r = S.settings.rules;
+        const moved = S.data.captions.some((c) => c.words.some((x) => x.at));
+        return [
+            resetSection(t('whip.title'), [], { key: 'whip', keys: WHIP_KEYS }),
+            h('div', { class: 'row' }, h('label', { class: 'lbl', for: 'whPattern' }, t('whip.pattern')),
+                select('whPattern', Core.whip.PATTERN_IDS.map((id) => [id, t('whip.' + id)]), w.pattern, (v) => set({ pattern: v }))),
+            r.maxWords * (r.lines || 1) > pattern.maxWords ? h('p', { class: 'hint', style: 'margin:2px 14px 6px' }, t('whip.patternHint', { n: pattern.maxWords })) : null,
+            h('div', { class: 'row' }, h('span', { class: 'lbl' }, t('whip.in')),
+                seg([['pattern', t('whip.byPattern'), false, t('whip.byPatternTitle')], ['fixed', t('whip.fixed'), false, t('whip.fixedTitle')]],
+                    w.inMode, (v) => set({ inMode: v }), t('whip.in'))),
+            w.inMode === 'fixed' ? angleDial('whInAngle', t('whip.inAngle'), Math.round(w.inAngle), live('inAngle'), saveSettings, true) : null,
+            h('div', { class: 'row' }, h('span', { class: 'lbl' }, t('whip.out')),
+                seg([['pattern', t('whip.byPattern'), false, t('whip.byPatternTitle')], ['fixed', t('whip.fixed'), false, t('whip.fixedTitle')],
+                    ['back', t('whip.back'), false, t('whip.backTitle')], ['through', t('whip.through'), false, t('whip.throughTitle')]],
+                w.outMode, (v) => set({ outMode: v }), t('whip.out'))),
+            w.outMode === 'fixed' ? angleDial('whOutAngle', t('whip.outAngle'), Math.round(w.outAngle), live('outAngle'), saveSettings) : null,
+            slider('whDistance', t('whip.distance'), 0, 150, 1, w.distance, live('distance'), saveSettings),
+            slider('whInFrames', t('whip.inFrames'), 1, 20, 1, w.inFrames, live('inFrames'), saveSettings),
+            slider('whOutFrames', t('whip.outFrames'), 1, 20, 1, w.outFrames, live('outFrames'), saveSettings),
+            slider('whOvershoot', t('whip.overshoot'), 0, 30, 1, w.overshoot, live('overshoot'), saveSettings),
+            slider('whStagger', t('whip.stagger'), 0, 6, 1, w.stagger, live('stagger'), saveSettings),
+            slider('whShutter', t('whip.shutter'), 0, 360, 1, w.shutter, live('shutter'), saveSettings),
+            slider('whSpacing', t('whip.spacing'), 0, 30, 1, w.spacing, live('spacing'), saveSettings),
+            h('div', { class: 'row' }, h('span', { class: 'lbl' }, t('whip.glow')),
+                colorSwatches(GLOW_COLORS, w.glow, (col) => set({ glow: col }), t('whip.glow'), true, t('whip.none'))),
+            h('div', { class: 'row' }, h('span', { class: 'lbl' }, t('whip.bar')),
+                colorSwatches(BAR_COLORS, w.bar, (col) => set({ bar: col }), t('whip.bar'), true, t('whip.none'))),
+            api.whipPositions ? [
+                h('p', { class: 'hint', style: 'margin:10px 14px 6px' }, t('whip.moveHint')),
+                h('div', { class: 'pad stack' },
+                    h('button', { type: 'button', class: 'btn block', disabled: !!S.busy || !S.connected, title: t('whip.fromResolveTitle'), onclick: whipFromResolve }, t('whip.fromResolve')),
+                    moved ? h('button', { type: 'button', class: 'btn block', onclick: whipResetPlaces }, t('whip.resetMoved')) : null)
+            ] : moved ? h('div', { class: 'pad', style: 'margin-top:8px' },
+                h('button', { type: 'button', class: 'btn block', onclick: whipResetPlaces }, t('whip.resetMoved'))) : null
+        ];
+    }
+
+    // Preset swatches plus a custom colour picker. withDefault adds a "style default" swatch (''),
+    // named noneLabel instead where '' means no colour at all (Whip's glow and underline).
+    function colorSwatches(colors, value, onPick, label, withDefault, noneLabel) {
         const list = withDefault ? colors : colors.filter(Boolean);
         const custom = value && !list.includes(value);
+        const empty = noneLabel || t('de.styleDefault');
         return h('div', { class: 'swatches', role: 'group', 'aria-label': label },
             list.map((col) => h('button', {
                 type: 'button', class: 'swatch' + (value === col ? ' on' : '') + (col ? '' : ' none'),
-                style: col ? `background:${col}` : null, title: col || t('de.styleDefault'), 'aria-label': col || t('de.styleDefault'),
+                style: col ? `background:${col}` : null, title: col || empty, 'aria-label': col || empty,
                 'aria-pressed': String(value === col), onclick: () => onPick(col)
             })),
             h('input', {
@@ -1803,7 +2692,7 @@
         startProgress(clips.length);
         try {
             const res = await call('deliver', {
-                captions: S.data.captions, clips, look: compLook(), styleRef: S.settings.style, track: deliverTrack(), clipColor: L.clipColor || null
+                captions: withDrift(S.data.captions).map(whipCaption), clips, look: compLook(), styleRef: S.settings.style, track: deliverTrack(), clipColor: L.clipColor || null
             });
             if (res.cancelled) flash(t('de.cancelled'));
             else {
@@ -1883,7 +2772,7 @@
         if (!(await fontsOk())) return;
         startProgress(S.data.captions.length);
         try {
-            const res = await call('modify', { track: S.modTrack, captions: S.data.captions, clips: finalClips(), look: compLook(), styleRef: styleRef() });
+            const res = await call('modify', { track: S.modTrack, captions: withDrift(S.data.captions).map(whipCaption), clips: finalClips(), look: compLook(), styleRef: styleRef() });
             flash(res.cancelled ? t('de.cancelledModify') : t('de.updated', { n: res.updated, track: res.track }));
         } catch (e) {
             flash(e.message, true);
@@ -1927,7 +2816,7 @@
         S.busy = { since: Date.now() };
         renderFooter();
         try {
-            const res = await call('deliverTest', { caption: S.data.captions[i], clip: finalClips()[i], look: compLook(), styleRef: S.settings.style, track });
+            const res = await call('deliverTest', { caption: whipCaption(withDrift([S.data.captions[i]])[0], i), clip: finalClips()[i], look: compLook(), styleRef: S.settings.style, track });
             if (track === 'new') {
                 S.data.track = res.track;
                 saveData();
@@ -1980,7 +2869,7 @@
         }
         const i = Math.min(S.pvIdx || 0, S.data.captions.length - 1);
         const track = deliverTrack();
-        const opts = { caption: S.data.captions[i], clip: finalClips()[i], look: compLook(), styleRef: S.settings.style, track };
+        const opts = { caption: whipCaption(withDrift([S.data.captions[i]])[0], i), clip: finalClips()[i], look: compLook(), styleRef: S.settings.style, track };
         const key = JSON.stringify(opts);
         if (key === liveKey) return;
         liveBusy = true;

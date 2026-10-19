@@ -159,6 +159,27 @@
             root.__mockLastTest = opts;
             return { ok: true, data: { track: 2 } };
         }),
+        // The last Whip test caption's words as Resolve reads them back (Text+ Centers), laid out
+        // as the comp placed them and nudged right, as if dragged in the viewer.
+        whipPositions: () => wait(200).then(() => {
+            const test = root.__mockLastTest;
+            const c = test && test.caption;
+            if (!c || !c.whip || !test.look || !test.look.whip) {
+                return { ok: false, error: 'Place a test caption first (Test or Live in viewer), then move its words in Resolve\'s viewer.', code: 'noTestCaption' };
+            }
+            const Core = root.CapCore;
+            const L = test.look;
+            const { width: W, height: H } = context.timeline;
+            const words = c.words.map((w) => ({ text: Core.textfx.apply(w.text, L.caseMode, L.strip), emph: w.emph || null, at: w.at || null })).filter((w) => w.text);
+            const placed = Core.whip.layout(words, { whip: L.whip, width: W, height: H, index: c.whip.index, measure: (w, i) => c.whip.metrics[i] });
+            return { ok: true, data: {
+                origins: placed.map((p) => {
+                    const [x, y] = Core.whip.textPlus(p, W, H).center;
+                    return [x + 0.03, y];
+                }),
+                texts: placed.map((p) => p.text)
+            } };
+        }),
         // A tiny dictionary: the demo speech plus the words a real check would offer.
         spellcheck: (texts, lang, userWords) => {
             const base = 'fuimos 25657\nalquilamos 577\nalquilaremos 162\nalquilarlos 90\nwatching 73700\ncaptions 1057';

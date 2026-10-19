@@ -6,7 +6,9 @@
 })(this, function (phrases) {
     'use strict';
 
-    // opts: { fillGaps, maxGap (frames), minFrames }. Returns [{ start, end }] in timeline frames.
+    // opts: { fillGaps, maxGap (frames), minFrames, tail }. tail: frames a caption keeps after its
+    // last word when the next caption leaves room (a number, or caption → number; Whip's out-whips).
+    // Returns [{ start, end }] in timeline frames.
     function finalize(captions, opts) {
         const o = opts || {};
         const out = captions.map((c) => ({ start: phrases.start(c), end: phrases.end(c) }));
@@ -14,6 +16,8 @@
             const cur = out[i];
             const next = out[i + 1];
             const limit = next ? next.start : Infinity;
+            const tail = typeof o.tail === 'function' ? o.tail(captions[i]) : o.tail;
+            if (tail > 0) cur.end = Math.max(cur.end, Math.min(cur.end + tail, limit));
             if (o.fillGaps && next) {
                 const gap = next.start - cur.end;
                 if (gap > 0 && gap <= (o.maxGap || 0)) cur.end = next.start;

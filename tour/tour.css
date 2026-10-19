@@ -18,6 +18,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 .head { display: flex; align-items: center; gap: 16px; max-width: 1280px; margin: 0 auto; padding: 16px; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 19px; }
+.brand .by { font-weight: 500; font-size: 13px; color: var(--muted); align-self: flex-end; margin: 0 0 3px -4px; }
 .tag { margin: 0; color: var(--muted); font-size: 14px; flex: 1; min-width: 200px; }
 .lang { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .lang button { background: none; border: 0; padding: 6px 12px; font-size: 13px; font-weight: 600; color: var(--muted); }
