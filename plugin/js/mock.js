@@ -153,22 +153,38 @@
             }
             root.__mockPlaced = n;
             root.__mockLastDeliver = opts;
-            return { ok: true, data: { placed: n, track: 2, ids: opts.clips.map((c, i) => `mock-${i}`), newTrack: opts.track === 'new', replaced: 0 } };
+            const cache = opts.look && opts.look.style === 'whip' ? { renderCache: root.__mockRenderCache || 'none' } : {};
+            return { ok: true, data: Object.assign({ placed: n, track: 2, ids: opts.clips.map((c, i) => `mock-${i}`), newTrack: opts.track === 'new', replaced: 0 }, cache) };
         },
+        // The project's render cache (Whip captions cache with it on): starts off, as in the crash lab.
+        renderCacheOn: () => wait(150).then(() => {
+            root.__mockRenderCache = 'user';
+            return { ok: true, data: 'user' };
+        }),
         deliverTest: (opts) => wait(300).then(() => {
             root.__mockLastTest = opts;
             return { ok: true, data: { track: 2 } };
         }),
-        // The last Whip test caption's words as Resolve reads them back (Text+ Centers), laid out
-        // as the comp placed them and nudged right, as if dragged in the viewer.
+        // A Whip caption's words as Resolve reads them back (Text+ Centers), laid out as the comp
+        // placed them and nudged right, as if dragged in the viewer: the last test caption, or with
+        // none (or __mockAtDelivered set) the delivered caption under the playhead.
         whipPositions: () => wait(200).then(() => {
             const test = root.__mockLastTest;
-            const c = test && test.caption;
-            if (!c || !c.whip || !test.look || !test.look.whip) {
-                return { ok: false, error: 'Place a test caption first (Test or Live in viewer), then move its words in Resolve\'s viewer.', code: 'noTestCaption' };
+            const sent = root.__mockLastDeliver;
+            let c = test && test.caption;
+            let L = test && test.look;
+            let at = null;
+            if (sent && sent.captions && (root.__mockAtDelivered || !c)) {
+                const frame = root.__mockPlayhead || 0;
+                const k = sent.clips.findIndex((x) => x.start <= frame && frame < x.end);
+                at = k >= 0 ? k : 0;
+                c = sent.captions[at];
+                L = sent.look;
+            }
+            if (!c || !c.whip || !L || !L.whip) {
+                return { ok: false, error: 'Put Resolve\'s playhead on a Whip caption (delivered, or a test one), then move its words in Resolve\'s viewer.', code: 'noWhipCaption' };
             }
             const Core = root.CapCore;
-            const L = test.look;
             const { width: W, height: H } = context.timeline;
             const words = c.words.map((w) => ({ text: Core.textfx.apply(w.text, L.caseMode, L.strip), emph: w.emph || null, at: w.at || null })).filter((w) => w.text);
             const placed = Core.whip.layout(words, { whip: L.whip, width: W, height: H, index: c.whip.index, measure: (w, i) => c.whip.metrics[i] });
@@ -177,7 +193,8 @@
                     const [x, y] = Core.whip.textPlus(p, W, H).center;
                     return [x + 0.03, y];
                 }),
-                texts: placed.map((p) => p.text)
+                texts: placed.map((p) => p.text),
+                ...(at === null ? {} : { track: 2, index: at, count: sent.captions.length })
             } };
         }),
         // A tiny dictionary: the demo speech plus the words a real check would offer.
@@ -196,7 +213,8 @@
                 await wait(30);
                 if (root.__mockProgress) root.__mockProgress({ done: i, total: n });
             }
-            return { ok: true, data: { updated: n, track: opts.track } };
+            const cache = opts.look && opts.look.style === 'whip' ? { renderCache: root.__mockRenderCache || 'none' } : {};
+            return { ok: true, data: Object.assign({ updated: n, track: opts.track }, cache) };
         },
         // __mockRender({ state: 'start', guide: true }) from the console shows the render warning.
         guide: (want) => {

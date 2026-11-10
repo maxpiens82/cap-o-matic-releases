@@ -14,13 +14,19 @@
         return rules && rules.lines === 2 ? phrases.bestLineBreak(words, rules.maxChars, rules.maxWords) : null;
     }
 
-    // Splits caption ci so word wi starts a new caption.
+    // Splits caption ci so word wi starts a new caption. Pruned words go with the half they were
+    // spoken in.
     function split(caps, ci, wi) {
         const c = caps[ci];
         if (!c || wi <= 0 || wi >= c.words.length) return caps;
         const lb = c.lineBreak;
+        const at = c.words[wi].start;
         const a = Object.assign({}, c, { words: c.words.slice(0, wi), lineBreak: lb != null && lb < wi ? lb : null, nudgeEnd: 0 });
         const b = Object.assign({}, c, { words: c.words.slice(wi), lineBreak: lb != null && lb > wi ? lb - wi : null, nudgeStart: 0 });
+        if (c.pruned) {
+            a.pruned = c.pruned.filter((w) => w.start < at);
+            b.pruned = c.pruned.filter((w) => w.start >= at);
+        }
         return replaceAt(caps, ci, a, b);
     }
 
@@ -31,7 +37,119 @@
         if (!a || !b) return caps;
         const words = a.words.concat(b.words);
         const joined = { words, lineBreak: lineBreakFor(words, rules), nudgeStart: a.nudgeStart || 0, nudgeEnd: b.nudgeEnd || 0 };
+        const pruned = (a.pruned || []).concat(b.pruned || []);
+        if (pruned.length) joined.pruned = pruned;
         return caps.slice(0, ci).concat([joined], caps.slice(ci + 2));
+    }
+
+    // ------------------------------------------------------------ pruning
+    // A pruned word leaves its caption's words (so nothing that shows or delivers captions sees it)
+    // for the caption's `pruned` list, sorted by start, where it can be kept again. regroup then
+    // builds the captions afresh from the words that are left.
+
+    const byStart = (a, b) => a.start - b.start;
+
+    // A caption's kept and pruned words in spoken order: [{ word, kept, index }] (index into words
+    // or pruned).
+    function prunedView(c) {
+        return c.words.map((word, index) => ({ word, kept: true, index }))
+            .concat((c.pruned || []).map((word, index) => ({ word, kept: false, index })))
+            .sort((x, y) => byStart(x.word, y.word));
+    }
+
+    function prunedCount(caps) {
+        return caps.reduce((n, c) => n + (c.pruned ? c.pruned.length : 0), 0);
+    }
+
+    // Prunes word wi of caption ci. When it was the caption's last kept word, the caption goes and
+    // its pruned words join the caption before it (or after it, for the first).
+    function prune(caps, ci, wi, rules) {
+        const c = caps[ci];
+        const w = c && c.words[wi];
+        if (!w) return caps;
+        const pruned = (c.pruned || []).concat([w]).sort(byStart);
+        const words = c.words.filter((x, k) => k !== wi);
+        if (words.length) {
+            const lineBreak = c.lineBreak == null ? null : lineBreakFor(words, rules);
+            return replaceAt(caps, ci, Object.assign({}, c, { words, pruned, lineBreak }));
+        }
+        const to = ci > 0 ? ci - 1 : ci + 1;
+        const host = caps[to];
+        if (!host) return caps;
+        const moved = Object.assign({}, host, { pruned: (host.pruned || []).concat(pruned).sort(byStart) });
+        const out = caps.slice();
+        out[to] = moved;
+        out.splice(ci, 1);
+        return out;
+    }
+
+    // Keeps pruned word pi of caption ci again, back among its caption's words in spoken order.
+    function unprune(caps, ci, pi, rules) {
+        const c = caps[ci];
+        const w = c && c.pruned && c.pruned[pi];
+        if (!w) return caps;
+        const words = c.words.concat([w]).sort(byStart);
+        const pruned = c.pruned.filter((x, k) => k !== pi);
+        const next = Object.assign({}, c, { words, lineBreak: c.lineBreak == null ? null : lineBreakFor(words, rules) });
+        if (pruned.length) next.pruned = pruned;
+        else delete next.pruned;
+        return replaceAt(caps, ci, next);
+    }
+
+    // Every pruned word kept again, in place.
+    function unpruneAll(caps, rules) {
+        if (!prunedCount(caps)) return caps;
+        return caps.map((c) => {
+            if (!c.pruned || !c.pruned.length) return c;
+            const words = c.words.concat(c.pruned).sort(byStart);
+            const next = Object.assign({}, c, { words, lineBreak: c.lineBreak == null ? null : lineBreakFor(words, rules) });
+            delete next.pruned;
+            return next;
+        });
+    }
+
+    // The captions built afresh by the phrase rules from the words that are kept, which keep their
+    // spelling and emphasis (groups, line breaks and nudges are the rules' again). A pruned word
+    // counts as speech, so the time it took isn't read as a pause, and a sentence it ends still
+    // ends there; it stays with the caption it was spoken in or after.
+    function regroup(caps, rules, fps) {
+        const kept = [];
+        const pruned = [];
+        for (const c of caps) {
+            kept.push(...c.words);
+            if (c.pruned) pruned.push(...c.pruned);
+        }
+        kept.sort(byStart);
+        pruned.sort(byStart);
+        if (!kept.length) return caps;
+        // Each kept word's end stretched over the pruned words spoken before the next kept one.
+        let p = 0;
+        const proxies = kept.map((w, i) => {
+            const nextStart = i + 1 < kept.length ? kept[i + 1].start : Infinity;
+            let end = w.end;
+            let sentenceEnd = false;
+            while (p < pruned.length && pruned[p].start < nextStart) {
+                if (pruned[p].start >= w.start) {
+                    end = Math.max(end, pruned[p].end);
+                    sentenceEnd = sentenceEnd || phrases.SENTENCE_END.test(pruned[p].text);
+                }
+                p++;
+            }
+            return { text: w.text, start: w.start, end, sentenceEnd };
+        });
+        let n = 0;
+        const out = phrases.build(proxies, rules, fps).map((g) => {
+            const words = kept.slice(n, n + g.words.length);
+            n += g.words.length;
+            return { words, lineBreak: g.lineBreak, nudgeStart: 0, nudgeEnd: 0 };
+        });
+        // Pruned words: with the last caption that starts at or before them (else the first).
+        let k = 0;
+        for (const w of pruned) {
+            while (k + 1 < out.length && out[k + 1].words[0].start <= w.start) k++;
+            (out[k].pruned = out[k].pruned || []).push(w);
+        }
+        return out;
     }
 
     const norm = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
@@ -205,5 +323,8 @@
         return -1;
     }
 
-    return { split, merge, setText, paint, setLineBreak, nudge, resetNudge, captionAt, sameEmph, replaceWord, clearSpell, applySpell };
+    return {
+        split, merge, setText, paint, setLineBreak, nudge, resetNudge, captionAt, sameEmph, replaceWord, clearSpell, applySpell,
+        prunedView, prunedCount, prune, unprune, unpruneAll, regroup
+    };
 });

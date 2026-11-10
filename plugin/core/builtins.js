@@ -1,7 +1,7 @@
-// The built-in presets: twenty-four caption looks shipped with Cap-o-matic, read-only in the panel
+// The built-in presets: twenty-six caption looks shipped with Cap-o-matic, read-only in the panel
 // (apply or duplicate). Twelve on the first base styles, proposed from 2026 short-form caption
-// trends, and the twelve Whip studies (design/styles/whip.html), one per pattern; all approved by
-// the user. Every font is OFL and bundled by the installer (installer/fonts). Pure data.
+// trends, the twelve Whip studies (design/styles/whip.html), one per pattern, all approved by the
+// user; and two Stacked looks modelled on a reel the owner sent (2026-11-10). Every font is OFL and bundled by the installer (installer/fonts). Pure data.
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) module.exports = factory();
     else (root.CapCore = root.CapCore || {}).builtins = factory();
@@ -118,7 +118,19 @@
             look: { font: 'Montserrat', fontStyle: 'ExtraBold', caseMode: 'upper', strip: ALL_MARKS, shadow: shadow(60, 5, 14), fade: fade(3, 3), whip: whip('line', 22, [6, 4], [5, 1]) } },
         { id: 'golpe', name: 'Golpe', en: 'Punch', after: 'Whip study 12: one huge word at a time, punching straight through',
             style: 'whip', rules: rules(1, 50, 1), brush: brush('#FFD93B', 1),
-            look: { font: 'Anton', fontStyle: 'Regular', caseMode: 'upper', strip: ALL_MARKS, outline: outline(0.03), shadow: NO_SHADOW, fade: fade(2, 2), whip: whip('punch', 80, [5, 12], [4, 0]) } }
+            look: { font: 'Anton', fontStyle: 'Regular', caseMode: 'upper', strip: ALL_MARKS, outline: outline(0.03), shadow: NO_SHADOW, fade: fade(2, 2), whip: whip('punch', 80, [5, 12], [4, 0]) } },
+
+        // Stacked, measured frame by frame from a reel the owner sent (2026-11-10): Montserrat
+        // ExtraBold about 12 % tight, a soft shadow, no outline; each row slides 12 % of the width
+        // out of the block's middle on an exponential ease-out (13 frames at 30 fps, most of it in
+        // the first 6) with no overshoot and no motion blur, the words fading in over 6 frames; the
+        // rows leave together, away from each other, fading over 9. The second sits lower.
+        { id: 'apilado', name: 'Apilado', en: 'Stacked', after: 'a real-estate reel: a left-aligned block in the upper third, smooth slides, no bounce',
+            style: 'whip', rules: rules(4, 20, 1), brush: brush('#FFD93B', 1),
+            look: { font: 'Montserrat', fontStyle: 'ExtraBold', caseMode: 'upper', strip: ALL_MARKS, shadow: shadow(60, 4, 20), fade: fade(6, 9), whip: whip('stack', 12, [13, 0], [10, 0], { shutter: 0, spacing: -12 }) } },
+        { id: 'apilado-bajo', name: 'Apilado bajo', en: 'Stacked Low', after: 'Stacked in the lower third, for shots with a busy top',
+            style: 'whip', rules: rules(4, 20, 1), brush: brush('#FFD93B', 1),
+            look: { font: 'Montserrat', fontStyle: 'ExtraBold', caseMode: 'upper', strip: ALL_MARKS, shadow: shadow(60, 4, 20), fade: fade(6, 9), whip: whip('stack', 12, [13, 0], [10, 0], { shutter: 0, spacing: -12, y: 78 }) } }
     ];
 
     // As presets: the same shape a saved or imported preset has, plus builtin/id.

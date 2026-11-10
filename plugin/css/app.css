@@ -77,6 +77,9 @@ button:disabled { cursor: default; opacity: .45; }
 .seg { display: flex; gap: 2px; background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 2px; }
 .seg button { flex: 1; border: 0; border-radius: 4px; padding: 5px 10px; font-size: 12px; font-weight: 500; white-space: nowrap; background: transparent; color: var(--muted); }
 .seg button.on { background: #3a3a41; color: var(--text-strong); box-shadow: 0 1px 0 rgba(0,0,0,.4); }
+.seg button .whip-icon { display: block; width: 44px; height: 22px; margin: -3px auto; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.whip-icon .word { fill: currentColor; stroke: none; }
+.whip-icon .came { stroke-dasharray: 1.5 2.5; opacity: .55; }
 
 .row { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 10px; padding: 4px 14px; }
 .row.top-align { align-items: start; }
@@ -142,6 +145,10 @@ input[type=checkbox] { width: 15px; height: 15px; margin: 0; accent-color: var(-
 .word.sp-unsure { text-decoration: underline wavy var(--bad); text-underline-offset: 3px; }
 .word.sp-fixed { text-decoration: underline dotted var(--ok); text-underline-offset: 3px; }
 .word.sp-on { box-shadow: 0 0 0 2px var(--accent); }
+/* Prune: a pruned word stays in its place, struck through, until it's kept again. */
+.word.pruned { color: var(--muted-2); background: transparent; border-style: dashed; text-decoration: line-through; opacity: 0.7; }
+.word.pruned:hover { opacity: 1; }
+.prune-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 /* Edit: title, modes, hint or brush, spelling bar stay at the top; only the captions scroll. */
 .ed-sticky { position: sticky; top: 0; z-index: 5; background: var(--bg); padding-bottom: 2px; border-bottom: 1px solid transparent; }
 .screen.scrolled .ed-sticky { border-bottom-color: var(--line); box-shadow: 0 8px 18px rgba(0, 0, 0, .45); }

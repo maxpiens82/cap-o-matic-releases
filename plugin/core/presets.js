@@ -35,7 +35,7 @@
         pattern: oneOf(...whip.PATTERN_IDS), inMode: oneOf(...whip.IN_MODES), inAngle: isNum(0, 359),
         outMode: oneOf(...whip.OUT_MODES), outAngle: isNum(0, 359), distance: isNum(0, 200),
         inFrames: isNum(1, 30, true), outFrames: isNum(1, 30, true), overshoot: isNum(0, 50), stagger: isNum(0, 10, true),
-        shutter: isNum(0, 360), scale: isNum(30, 200), x: isNum(0, 100), y: isNum(0, 100), spacing: isNum(0, 50),
+        shutter: isNum(0, 360), scale: isNum(30, 200), x: isNum(0, 100), y: isNum(0, 100), spacing: isNum(-15, 50),
         glow: isHexOrNone, bar: isHexOrNone
     };
     const isWhip = (v) => isPlain(v) && Object.entries(v).every(([k, x]) => Object.prototype.hasOwnProperty.call(WHIP, k) && WHIP[k](x));

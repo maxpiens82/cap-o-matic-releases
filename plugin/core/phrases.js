@@ -42,6 +42,8 @@
         return rules.lines === 2 && bestLineBreak(words, rules.maxChars, rules.maxWords) !== null;
     }
 
+    // words: [{ text, start, end, sentenceEnd? }]; sentenceEnd marks a sentence that ends after the
+    // word though its text doesn't show it (a pruned word after it ended it: edit.regroup).
     function build(words, rulesIn, fps) {
         const rules = Object.assign({}, DEFAULT_RULES, rulesIn);
         const pauseFrames = rules.pauseBreak ? Math.round(rules.pauseSeconds * Number(fps)) : Infinity;
@@ -51,7 +53,7 @@
             if (cur.length) {
                 const prev = cur[cur.length - 1];
                 const breakHere =
-                    (rules.sentenceBreak && SENTENCE_END.test(prev.text)) ||
+                    (rules.sentenceBreak && (SENTENCE_END.test(prev.text) || prev.sentenceEnd)) ||
                     w.start - prev.end > pauseFrames ||
                     !fits(cur.concat(w), rules);
                 if (breakHere) {
@@ -88,5 +90,5 @@
         return lines(caption).join('\n');
     }
 
-    return { DEFAULT_RULES, build, bestLineBreak, start, end, lines, text, textLength };
+    return { DEFAULT_RULES, SENTENCE_END, build, bestLineBreak, start, end, lines, text, textLength };
 });

@@ -1059,7 +1059,31 @@
         return h('button', { type: 'button', class: cls, style, title, onclick: (ev) => wordClick(ev, ci, wi) }, w.text);
     }
 
+    // Prune: every word the caption was spoken with, in order; a click prunes a kept word or keeps
+    // a pruned one again (struck through, dimmed).
+    function pruneBody(c, i) {
+        const E = Core.edit;
+        const rules = S.settings.rules;
+        return h('div', { class: 'line' }, E.prunedView(c).map(({ word, kept, index }) => h('button', {
+            type: 'button', class: 'word' + (kept ? '' : ' pruned'), title: kept ? t('ed.pruneWord') : t('ed.keepWord'),
+            'aria-pressed': String(!kept),
+            onclick: () => commit(kept ? E.prune(S.data.captions, i, index, rules) : E.unprune(S.data.captions, i, index, rules))
+        }, word.text)));
+    }
+
+    function prunePanel(caps) {
+        const E = Core.edit;
+        const n = E.prunedCount(caps);
+        return h('div', { class: 'brush' },
+            h('p', { class: 'hint', style: 'margin:0' }, t('ed.hintPrune')),
+            h('div', { class: 'prune-actions' },
+                h('button', { type: 'button', class: 'btn small primary', onclick: () => commit(E.regroup(S.data.captions, S.settings.rules, fps())) }, t('ed.regroup')),
+                h('span', { class: 'lbl' }, t('ed.prunedCount', { n })),
+                n ? h('button', { type: 'button', class: 'linklike', onclick: () => commit(E.unpruneAll(S.data.captions, S.settings.rules)) }, t('ed.keepAll')) : null));
+    }
+
     function captionBody(c, i) {
+        if (S.editMode === 'prune') return pruneBody(c, i);
         if (S.editMode === 'spell') {
             const input = h('input', {
                 class: 'field spell', value: c.words.map((w) => w.text).join(' '), 'data-i': String(i),
@@ -1147,6 +1171,7 @@
         if (mode === 'emph') panel = brushPanel();
         else if (mode === 'spell') panel = h('p', { class: 'hint' }, t('ed.hintSpell'));
         else if (mode === 'break') panel = h('p', { class: 'hint' }, t('ed.hintBreakMode'));
+        else if (mode === 'prune') panel = prunePanel(caps);
         else {
             panel = h('p', { class: 'hint' }, t('ed.hintGroup'),
                 S.settings.rules.lines === 2 || caps.some((c) => c.lineBreak != null) ? [' ', t('ed.hintBreak')] : null);
@@ -1157,7 +1182,7 @@
                 h('div', { class: 'tools' },
                     h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('ed.undo'), title: t('ed.undo'), disabled: !S.hist.past.length, onclick: undo }, icon('undo', 15)),
                     h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('ed.redo'), title: t('ed.redo'), disabled: !S.hist.future.length, onclick: redo }, icon('redo', 15)))),
-            h('div', { class: 'pad', style: 'margin-bottom:10px' }, seg([['group', t('ed.group')], ['spell', t('ed.spell')], ['emph', t('ed.emph')], ['break', t('ed.breakMode')]], mode, (v) => {
+            h('div', { class: 'pad', style: 'margin-bottom:10px' }, seg([['group', t('ed.group')], ['prune', t('ed.prune')], ['spell', t('ed.spell')], ['emph', t('ed.emph')], ['break', t('ed.breakMode')]], mode, (v) => {
                 S.editMode = v;
                 renderScreen();
             }, t('ed.mode'))),
@@ -2158,23 +2183,37 @@
         scheduleLive();
     }
 
-    // Words moved in Resolve's viewer: reads the Text+ Centers of the test caption there and, if it
-    // is the caption shown here, keeps every word that moved as a place of its own.
+    // Words moved in Resolve's viewer: reads the Text+ Centers of the Whip caption at Resolve's
+    // playhead (a delivered one, or the test one) and keeps every word that moved as a place of its
+    // own. A delivered caption is matched by its place on its track, like Modify existing; the test
+    // caption is the one shown here.
     async function whipFromResolve() {
-        const i = S.pvIdx;
-        const c = S.data.captions[i];
         const tl = timeline();
-        if (!c || !tl) return;
+        if (!tl || !S.data.captions[S.pvIdx]) return;
+        const before = S.data.captions;
         try {
-            const got = (await call('whipPositions')) || {};
-            if (S.data.captions[i] !== c) return; // the captions changed meanwhile
+            const track = S.deliverMode === 'modify' ? S.modTrack : S.data.track;
+            const got = (await call('whipPositions', { track: Number.isInteger(track) ? track : null })) || {};
+            if (S.data.captions !== before) return; // the captions changed meanwhile
+            const delivered = Number.isInteger(got.index);
+            if (delivered && (got.count !== before.length || got.index < 0)) {
+                flash(t('err.countMismatch', { track: got.track, have: got.count, want: before.length }), true);
+                return;
+            }
+            const i = delivered ? got.index : S.pvIdx;
+            const c = before[i];
             const L = look();
             const words = whipWords(c, L);
             const texts = Array.isArray(got.texts) ? got.texts : [];
             const origins = Array.isArray(got.origins) ? got.origins : [];
             if (texts.length !== words.length || texts.some((x, k) => x !== words[k].text)) {
-                flash(t('whip.notThis', { n: i + 1 }), true);
+                flash(delivered ? t('whip.notDelivered', { n: i + 1, track: got.track }) : t('whip.notThis', { n: i + 1 }), true);
                 return;
+            }
+            // The preview shows the caption the positions are for.
+            if (S.pvIdx !== i) {
+                S.pvIdx = i;
+                renderScreen();
             }
             // A word whose position was keyed in Resolve comes back null and is left alone.
             if (origins.length !== words.length || !origins.every((o) => o === null || (Array.isArray(o) && isFinite(o[0]) && isFinite(o[1])))) {
@@ -2458,6 +2497,37 @@
     // Whip's own section resets these; its size and position belong to Look.
     const WHIP_KEYS = Object.keys(Core.whip.DEFAULTS).filter((k) => !['scale', 'x', 'y'].includes(k));
 
+    // The pictures on Whip's Comes in / Goes out buttons: dots are words where they rest, arrows their
+    // whips, a dashed line the way a word came in. Named by the button's title on hover.
+    function whipIcon(kind, name) {
+        const NS = 'http://www.w3.org/2000/svg';
+        const svg = (tag, attrs) => {
+            const el = document.createElementNS(NS, tag);
+            for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
+            return el;
+        };
+        const arrow = (x1, y1, x2, y2) => {
+            const len = Math.hypot(x2 - x1, y2 - y1);
+            const dx = (x2 - x1) / len;
+            const dy = (y2 - y1) / len;
+            const back = (s) => `${x2 - 3.6 * dx + s * 2.6 * dy},${y2 - 3.6 * dy - s * 2.6 * dx}`;
+            return [svg('line', { x1, y1, x2, y2 }), svg('polyline', { points: `${back(1)} ${x2},${y2} ${back(-1)}` })];
+        };
+        const came = (x1, y1, x2, y2) => svg('line', { class: 'came', x1, y1, x2, y2 });
+        const word = (cx, cy) => svg('circle', { class: 'word', cx, cy, r: 2.2 });
+        const parts = {
+            inPattern: [...arrow(3, 8, 12, 8), ...arrow(28, 2, 19.5, 5.8), ...arrow(27, 15, 19.3, 10.6), word(16, 8)],
+            inFixed: [...arrow(4, 4.5, 20.5, 4.5), ...arrow(4, 11.5, 20.5, 11.5), word(25, 4.5), word(25, 11.5)],
+            outPattern: [...arrow(12, 8, 3, 8), ...arrow(19.5, 5.8, 28, 2), ...arrow(19.3, 10.6, 27, 15), word(16, 8)],
+            outFixed: [...arrow(11.5, 4.5, 28, 4.5), ...arrow(11.5, 11.5, 28, 11.5), word(7, 4.5), word(7, 11.5)],
+            back: [came(3, 5, 19, 5), ...arrow(19, 11, 4, 11), word(24, 8)],
+            through: [came(2, 8, 12, 8), ...arrow(20, 8, 30, 8), word(16, 8)]
+        }[kind];
+        const pic = svg('svg', { class: 'whip-icon', viewBox: '0 0 32 16', role: 'img', 'aria-label': name });
+        pic.append(...parts);
+        return pic;
+    }
+
     // Whip: where the words go, which way they whip in and out, how far and fast, the motion blur,
     // letter spacing, glow and underline; and words moved by hand (the preview, Resolve's viewer).
     function whipSettings(L) {
@@ -2467,18 +2537,20 @@
         const pattern = Core.whip.PATTERNS[w.pattern] || Core.whip.PATTERNS[Core.whip.DEFAULTS.pattern];
         const r = S.settings.rules;
         const moved = S.data.captions.some((c) => c.words.some((x) => x.at));
+        // [value, icon, name, what it does]: the name and what it does show on hover.
+        const mode = ([v, icon, name, what]) => [v, whipIcon(icon, name), false, `${name}: ${what}`];
         return [
             resetSection(t('whip.title'), [], { key: 'whip', keys: WHIP_KEYS }),
             h('div', { class: 'row' }, h('label', { class: 'lbl', for: 'whPattern' }, t('whip.pattern')),
                 select('whPattern', Core.whip.PATTERN_IDS.map((id) => [id, t('whip.' + id)]), w.pattern, (v) => set({ pattern: v }))),
             r.maxWords * (r.lines || 1) > pattern.maxWords ? h('p', { class: 'hint', style: 'margin:2px 14px 6px' }, t('whip.patternHint', { n: pattern.maxWords })) : null,
             h('div', { class: 'row' }, h('span', { class: 'lbl' }, t('whip.in')),
-                seg([['pattern', t('whip.byPattern'), false, t('whip.byPatternTitle')], ['fixed', t('whip.fixed'), false, t('whip.fixedTitle')]],
+                seg([['pattern', 'inPattern', t('whip.byPattern'), t('whip.byPatternTitle')], ['fixed', 'inFixed', t('whip.fixed'), t('whip.fixedTitle')]].map(mode),
                     w.inMode, (v) => set({ inMode: v }), t('whip.in'))),
             w.inMode === 'fixed' ? angleDial('whInAngle', t('whip.inAngle'), Math.round(w.inAngle), live('inAngle'), saveSettings, true) : null,
             h('div', { class: 'row' }, h('span', { class: 'lbl' }, t('whip.out')),
-                seg([['pattern', t('whip.byPattern'), false, t('whip.byPatternTitle')], ['fixed', t('whip.fixed'), false, t('whip.fixedTitle')],
-                    ['back', t('whip.back'), false, t('whip.backTitle')], ['through', t('whip.through'), false, t('whip.throughTitle')]],
+                seg([['pattern', 'outPattern', t('whip.byPattern'), t('whip.byPatternOutTitle')], ['fixed', 'outFixed', t('whip.fixed'), t('whip.fixedOutTitle')],
+                    ['back', 'back', t('whip.back'), t('whip.backTitle')], ['through', 'through', t('whip.through'), t('whip.throughTitle')]].map(mode),
                 w.outMode, (v) => set({ outMode: v }), t('whip.out'))),
             w.outMode === 'fixed' ? angleDial('whOutAngle', t('whip.outAngle'), Math.round(w.outAngle), live('outAngle'), saveSettings) : null,
             slider('whDistance', t('whip.distance'), 0, 150, 1, w.distance, live('distance'), saveSettings),
@@ -2487,7 +2559,7 @@
             slider('whOvershoot', t('whip.overshoot'), 0, 30, 1, w.overshoot, live('overshoot'), saveSettings),
             slider('whStagger', t('whip.stagger'), 0, 6, 1, w.stagger, live('stagger'), saveSettings),
             slider('whShutter', t('whip.shutter'), 0, 360, 1, w.shutter, live('shutter'), saveSettings),
-            slider('whSpacing', t('whip.spacing'), 0, 30, 1, w.spacing, live('spacing'), saveSettings),
+            slider('whSpacing', t('whip.spacing'), -15, 30, 1, w.spacing, live('spacing'), saveSettings),
             h('div', { class: 'row' }, h('span', { class: 'lbl' }, t('whip.glow')),
                 colorSwatches(GLOW_COLORS, w.glow, (col) => set({ glow: col }), t('whip.glow'), true, t('whip.none'))),
             h('div', { class: 'row' }, h('span', { class: 'lbl' }, t('whip.bar')),
@@ -2606,6 +2678,7 @@
             const ref = styleRef();
             return h('div', null, head,
                 section(t('de.target')),
+                renderCacheNote(),
                 h('div', { class: 'row' }, h('label', { class: 'lbl', for: 'modTrack' }, t('de.track')),
                     trackSlot(() => select('modTrack', tracks, S.modTrack, (v) => { S.modTrack = Number(v); renderFooter(); }))),
                 h('div', { class: 'row' }, h('label', { class: 'lbl', for: 'modStyle' }, t('de.style')),
@@ -2631,6 +2704,7 @@
         scheduleLive();
         return h('div', null, head,
             section(t('de.placement')),
+            renderCacheNote(),
             lastDeliveryRow(),
             h('div', { class: 'row' }, h('label', { class: 'lbl', for: 'track' }, t('de.track')),
                 trackSlot(() => select('track', trackOptions(false), deliverTrack(), (v) => setDeliverTrack(v === 'new' ? 'new' : Number(v))))),
@@ -2704,6 +2778,7 @@
                 };
                 S.undoAsk = false;
                 saveData();
+                noteRenderCache(res);
                 flash(t('de.done', { n: res.placed, track: res.track }));
             }
         } catch (e) {
@@ -2712,6 +2787,31 @@
             endProgress();
             loadTracks();
         }
+    }
+
+    // Whip captions are set to cache in the background, which needs the project's render cache on.
+    // Deliver and Modify report it; while it's off, this says so and turns it on (User).
+    function renderCacheNote() {
+        if (!S.cacheOff) return null;
+        return h('div', { class: 'pad stack', style: 'margin-bottom:8px' },
+            note(t('de.cacheOff')),
+            h('button', { type: 'button', class: 'btn block', disabled: !!S.busy || !S.connected, title: t('de.cacheOnTitle'), onclick: renderCacheOn }, t('de.cacheOn')));
+    }
+
+    function noteRenderCache(res) {
+        if (!res || res.cancelled || !('renderCache' in res)) return;
+        S.cacheOff = res.renderCache === 'none';
+    }
+
+    async function renderCacheOn() {
+        try {
+            const mode = await call('renderCacheOn');
+            S.cacheOff = mode === 'none';
+            flash(S.cacheOff ? t('de.cacheStillOff') : t('de.cacheTurnedOn'), S.cacheOff);
+        } catch (e) {
+            flash(e.message, true);
+        }
+        renderScreen();
     }
 
     // The last delivery on this timeline, with Undo (asks first, in place).
@@ -2773,6 +2873,7 @@
         startProgress(S.data.captions.length);
         try {
             const res = await call('modify', { track: S.modTrack, captions: withDrift(S.data.captions).map(whipCaption), clips: finalClips(), look: compLook(), styleRef: styleRef() });
+            noteRenderCache(res);
             flash(res.cancelled ? t('de.cancelledModify') : t('de.updated', { n: res.updated, track: res.track }));
         } catch (e) {
             flash(e.message, true);

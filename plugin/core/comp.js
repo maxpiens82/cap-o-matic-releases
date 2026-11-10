@@ -527,7 +527,7 @@
         const emphOf = (w) => (w.emph ? Object.assign({}, w.emph, look.emphOverride || {}) : null);
         const placed = whip.layout(words.map((w) => ({ text: w.text, emph: emphOf(w), at: w.at })), {
             whip: s, width: W, height: H, index: meta.index || 0,
-            measure: (w, i) => (meta.metrics && meta.metrics[i]) || whip.estimate(w.text, (w.emph && w.emph.font) || font)
+            measure: (w, i) => (meta.metrics && meta.metrics[i]) || whip.estimate(w.text, (w.emph && w.emph.font) || font, s.spacing)
         });
         const keys = whip.animate(placed, words.map((w) => w.f), duration, s, look.fade && look.fade.on ? look.fade : null);
         const name = (i) => `W${i + 1}`;
@@ -789,8 +789,8 @@
     // same zones (assets/guide-9x16.svg, written from these by tools/make-brand.js).
     // opts: { width, height, duration, opacity (0–1) }
     // Layout in pixels at 1080×1920 (left, top, right, bottom), scaled to the timeline's width.
-    // Colours (docs/BRAND.md section 11, 2026-10-16): blocked areas in ENNEA's ink, secondary text in
-    // its Night blue, the centre of attention in paper, the subtitle zone in Cap-o-matic's HUD orange.
+    // Colours (docs/BRAND.md section 11, 2026-10-16): blocked areas in the brand's ink, secondary text in
+    // Night blue, the centre of attention in paper, the subtitle zone in Cap-o-matic's HUD orange.
     // `opacity` is each zone's share of the mask's own: the blocked areas full (ink at the mask's 70 %
     // darkens the video clearly; at 40 % it vanished on footage, owner 2026-10-16), the others 0.55,
     // about 40 % in the viewer, so the shot shows through them. Labels are drawn at the full mask opacity.

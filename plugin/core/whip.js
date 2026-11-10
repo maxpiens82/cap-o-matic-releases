@@ -46,7 +46,9 @@
     //   in, out     the pattern's own whip angles (degrees, 0° right, 90° up): in is the side the
     //               word comes from, out the side it leaves toward
     //   tilt        degrees, counter-clockwise
-    // Words carry their metrics per pixel of font size (w1 width, asc1/desc1 ink). Every pattern
+    //   lead        the word whose in-whip this one rides (its row's first), if not its own
+    // Words carry their metrics per pixel of font size (w1 width, asc1/desc1 ink) and chars, their
+    // letter count. Every pattern
     // keeps clear of the 9:16 safe-zone mask: 208 < y < 1480, and x < 913 below y 662.
 
     const PATTERNS = {
@@ -213,6 +215,53 @@
                 const a = (gi * 72 + 200) % 360;
                 return ws.map(() => ({ x: 510, y: 1190, align: 'center', maxW: 800, maxPx: 300, in: a, out: a + 180 }));
             }
+        },
+        // A left-aligned block of one or two rows in the upper third, as in a real-estate reel the
+        // owner sent (2026-11-10): a row's first word slides it out of the block's middle (the top
+        // row up, the bottom one down) and the words after it ride that slide, or, once it has
+        // landed, only fade in where they rest; the rows leave away from each other. Short words
+        // (two letters or fewer) are drawn smaller, on the row's baseline. The rows split where their
+        // widths come out closest (a tie goes to the longer top row, as in the reel); a row wider
+        // than the block shrinks to fit it.
+        stack: {
+            maxWords: 4,
+            // Half a second at 30 fps with the whole block in before the rows leave, room allowing
+            // (the owner, 2026-11-10: the words should stay a bit longer).
+            hold: 15,
+            layout(ws) {
+                const LEFT = 160, TOP = 550, BW = 740, MAX_PX = 152, GAP = 0.1, LEAD = 0.2, SMALL = 0.77;
+                const small = (w) => (w.chars <= 2 ? SMALL : 1);
+                const width = (row) => row.reduce((a, w) => a + w.w1 * small(w), 0) + GAP * (row.length - 1);
+                let counts = [ws.length];
+                if (ws.length > 1) {
+                    let best = Infinity;
+                    for (let k = ws.length - 1; k >= 1; k--) {
+                        const worst = Math.max(width(ws.slice(0, k)), width(ws.slice(k)));
+                        if (worst < best - 1e-9) {
+                            best = worst;
+                            counts = [k, ws.length - k];
+                        }
+                    }
+                }
+                const slots = [];
+                let at = 0;
+                let top = TOP;
+                counts.forEach((m, r) => {
+                    const row = ws.slice(at, at + m);
+                    const px = Math.min(MAX_PX, BW / width(row));
+                    const base = top + Math.max(...row.map((w) => w.asc1 * small(w))) * px;
+                    const dir = counts.length === 1 || r === 0 ? { in: 270, out: 90 } : { in: 90, out: 270 };
+                    let x = LEFT;
+                    row.forEach((w, j) => {
+                        const wp = px * small(w);
+                        slots.push(Object.assign({ x, y: base - ((w.asc1 - w.desc1) * wp) / 2, align: 'left', px: wp, lead: at }, dir));
+                        x += w.w1 * wp + GAP * px;
+                    });
+                    top = base + Math.max(...row.map((w) => w.desc1 * small(w))) * px + LEAD * px;
+                    at += m;
+                });
+                return slots;
+            }
         }
     };
     const PATTERN_IDS = Object.keys(PATTERNS);
@@ -230,7 +279,7 @@
     //                      between the words' out-whips)
     //   shutter            motion blur, Text+'s shutter angle in degrees; 0 = none
     //   scale, x, y        the whole pattern's size (%) and centre (% of the frame from top left)
-    //   spacing            extra letter spacing, % of an em
+    //   spacing            extra letter spacing, % of an em (down to −15: tighter)
     //   glow, bar          a glow behind the words, an underline bar: colours, '' = none
     const DEFAULTS = {
         pattern: 'line', inMode: 'pattern', inAngle: 290, outMode: 'pattern', outAngle: 110,
@@ -262,7 +311,7 @@
             scale: num(s.scale, 30, 200, D.scale),
             x: num(s.x, 0, 100, D.x),
             y: num(s.y, 0, 100, D.y),
-            spacing: num(s.spacing, 0, 50, D.spacing),
+            spacing: num(s.spacing, -15, 50, D.spacing),
             glow: isHex(s.glow) ? s.glow : '',
             bar: isHex(s.bar) ? s.bar : ''
         };
@@ -271,11 +320,14 @@
     // ------------------------------------------------------------ layout
 
     // Rough metrics for when no font can be measured (tests; the comp of a caption the panel didn't
-    // lay out): an average advance per character by family, caps 0.72 em, the line 1.22 em.
+    // lay out): an average advance per character by family, plus Whip's letter spacing (% of an
+    // em) between the letters, caps 0.72 em, the line 1.22 em.
     const ADVANCE = { Anton: 0.46, 'Bebas Neue': 0.4, Bangers: 0.5, 'Space Mono': 0.6, 'Archivo Black': 0.7, Montserrat: 0.68, Poppins: 0.64, Inter: 0.62, 'TikTok Sans': 0.58 };
-    function estimate(text, family) {
+    function estimate(text, family, spacing) {
         const a = ADVANCE[family] || 0.62;
-        return { w1: a * Math.max(1, [...String(text)].length), l1: 0, asc1: 0.72, desc1: 0.02, fasc1: 0.95, fdesc1: 0.27 };
+        const n = Math.max(1, [...String(text)].length);
+        const w1 = Math.max(0.05, a * n + ((spacing || 0) / 100) * (n - 1));
+        return { w1, l1: 0, asc1: 0.72, desc1: 0.02, fasc1: 0.95, fdesc1: 0.27 };
     }
 
     // Where each word of a caption goes. words: [{ text, emph, at }] as placed (case and
@@ -285,14 +337,15 @@
     // the word's metrics per pixel of font size: w1 (width), l1 (left overhang), asc1/desc1 (ink
     // above/below the baseline), fasc1/fdesc1 (the font's line above/below it) }.
     // Returns per word, in the frame's pixels (y down): text, emph, px (font size), width, cx, cy
-    // (the ink's centre), asc, desc, fasc, fdesc, in, out (angles, (−180, 180]), tilt, dist (pixels).
+    // (the ink's centre), asc, desc, fasc, fdesc, in, out (angles, (−180, 180]), tilt, dist (pixels),
+    // lead (the index of the word whose in-whip it rides: its own, or its row's first word's).
     function layout(words, opts) {
         if (!words.length) return [];
         const s = settings(opts.whip);
         const W = opts.width || DW;
         const H = opts.height || DH;
         const fit = (Math.min(W / DW, H / DH) * s.scale) / 100;
-        const ms = words.map((w, i) => Object.assign({}, opts.measure ? opts.measure(w, i) : estimate(w.text)));
+        const ms = words.map((w, i) => Object.assign({ chars: [...String(w.text)].length }, opts.measure ? opts.measure(w, i) : estimate(w.text, '', s.spacing)));
         let pattern = PATTERNS[s.pattern];
         // More words than the pattern holds (the phrase rules allow longer captions): two lines.
         if (ms.length > pattern.maxWords) pattern = PATTERNS.line;
@@ -319,7 +372,7 @@
                 text: w.text, emph: w.emph || null, px, width: m.w1 * px, l: m.l1 * px, cx, cy,
                 asc: m.asc1 * px, desc: m.desc1 * px, fasc: m.fasc1 * px, fdesc: m.fdesc1 * px,
                 in: wrap(into), out: wrap(out == null ? sl.out : out), tilt: sl.tilt || 0,
-                dist: (s.distance / 100) * DW * fit
+                dist: (s.distance / 100) * DW * fit, lead: sl.lead != null && sl.lead < i ? sl.lead : i
             };
         });
     }
@@ -352,7 +405,7 @@
     }
 
     // The frames of each word's whips, counted from the clip's first frame. starts: each word's
-    // first frame there. The out-whips take the clip's last frames, first word first, `stagger`
+    // first frame there (words come in at least STEP frames apart). The out-whips take the clip's last frames, first word first, `stagger`
     // apart, the last one gone on the clip's last frame; when the clip ends too soon after the
     // last word lands (the next caption starts straight away) they shorten, then bunch up, never
     // shorter than 2 frames. Returns [{ inAt, inLen, outAt, outLen }].
@@ -363,7 +416,14 @@
         const inLen = s.inFrames;
         let outLen = s.outFrames;
         let st = s.stagger;
-        const landed = Math.max(...starts.map((f) => f + inLen));
+        // One word after another: a word the transcript starts on (or just after) the one before
+        // comes in STEP frames after it, never later than the clip's last frame unless it already was.
+        const ins = [];
+        starts.forEach((f, i) => {
+            const own = Math.max(0, Math.round(f));
+            ins.push(i ? Math.max(own, Math.min(ins[i - 1] + STEP, end)) : own);
+        });
+        const landed = Math.max(...ins.map((f) => f + inLen));
         const room = end - landed;
         if (outLen + st * (n - 1) > room) {
             outLen = Math.max(Math.min(2, outLen), Math.min(outLen, room - st * (n - 1)));
@@ -372,11 +432,10 @@
         outLen = Math.max(1, Math.min(outLen, end));
         const base = end - outLen - st * (n - 1);
         // A word that starts in the clip's last frames still shows before it goes.
-        return starts.map((f, i) => {
-            const inAt = Math.max(0, Math.round(f));
-            return { inAt, inLen, outAt: Math.max(0, base + st * i, Math.min(inAt, end - outLen)), outLen };
-        });
+        return ins.map((inAt, i) => ({ inAt, inLen, outAt: Math.max(0, base + st * i, Math.min(inAt, end - outLen)), outLen }));
     }
+    // The fewest frames between two words coming in.
+    const STEP = 3;
 
     // A frame where every word has landed and none has left yet (Test and Live in viewer park
     // Resolve's playhead there), counted from the clip's first frame.
@@ -465,11 +524,14 @@
         };
     }
 
-    // Everything a caption's words do in its clip: placed words plus their keys.
+    // Everything a caption's words do in its clip: placed words plus their keys. A word with a lead
+    // rides its lead's in-whip: it shows from its own start, wherever the slide has got to by then.
     // starts: frames from the clip's start; fade: look.fade.
     function animate(placed, starts, clipLength, whip, fade) {
         const times = timing(starts, clipLength, whip);
-        return placed.map((p, i) => ({ timing: times[i], in: inKeys(times[i], whip), out: outKeys(times[i]), opacity: opacityKeys(times[i], fade) }));
+        return placed.map((p, i) => ({
+            timing: times[i], in: inKeys(times[p.lead != null && p.lead < i ? p.lead : i], whip), out: outKeys(times[i]), opacity: opacityKeys(times[i], fade)
+        }));
     }
 
     return {
