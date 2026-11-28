@@ -440,6 +440,26 @@
         return keys;
     }
 
+    // The frame Test and Live in viewer park Resolve's playhead on (counted from the clip's first
+    // frame): the caption at its widest while it still shows in full. Without drift that's the last
+    // word settled (Pop's grow takes 5 frames); with drift the letters spread to the very end, so as
+    // late as possible. Either way never into the fade-out (owner, 2026-11-26: the playhead sat on
+    // the clip's last frame, already faded away) nor before the fade-in ends. words: [{ start, end }]
+    // in clip frames. Starter styles only: bin templates get no fade or drift; Whip has restFrame.
+    function showFrame(words, length, look) {
+        const last = Math.max(0, length - 1);
+        // fadeKeys: [0, 0] → [in, rest] with a fade-in, [last − out, rest] → [last, 0] with a fade-out.
+        const keys = fadeKeys(look && look.fade, length) || [];
+        const n = keys.length;
+        const faded = n > 1 && keys[0][1] === 0 ? keys[1][0] : 0;
+        const shown = n > 1 && keys[n - 1][1] === 0 ? keys[n - 2][0] : last;
+        const drift = look && look.tracking && look.tracking.on && look.tracking.speed > 0;
+        const w = words && words.length ? words[words.length - 1] : null;
+        const settled = w ? Math.max(w.end - 1, w.start + 6) : 0;
+        const want = drift ? shown : Math.min(settled, shown);
+        return Math.round(Math.min(last, Math.max(0, faded, want)));
+    }
+
     function assemble(tools, extra, duration, center, fade) {
         let body = tools.map(([name, inputs]) => textTool(name, inputs)).join('') + extra.join('');
         let last = tools[0][0];
@@ -863,5 +883,5 @@
         return `Composition {\n\tCurrentTime = 0,\n\tRenderRange = { 0, ${last} },\n\tGlobalRange = { 0, ${last} },\n\tTools = {\n${tools.join('')}\t},\n}\n`;
     }
 
-    return { STYLES, FUSION, build, fromTemplate, prepare, readWhip, guide, lua, fadeKeys, trackingStart, driftKeys, MASK_ZONES, MASK_LABELS };
+    return { STYLES, FUSION, build, fromTemplate, prepare, readWhip, guide, lua, fadeKeys, showFrame, trackingStart, driftKeys, MASK_ZONES, MASK_LABELS };
 });

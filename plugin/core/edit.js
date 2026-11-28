@@ -222,16 +222,28 @@
     }
 
     // Spell check marks on a word: fixedFrom (the text before an automatic fix) and spell (choices
-    // for a close call). Replacing a word keeps its timing and emphasis and drops the marks.
+    // for a close call). Replacing a word keeps its timing and emphasis and drops the marks. Several
+    // words typed for one (the transcription ran two together) share its time by length, the way
+    // setText fills retyped words; a line break after the word moves with it.
     function replaceWord(caps, ci, wi, text) {
         const c = caps[ci];
         const w = c && c.words[wi];
-        const clean = String(text || '').trim();
-        if (!w || !clean || /\s/.test(clean)) return caps;
-        const next = Object.assign({}, w, { text: clean });
-        delete next.fixedFrom;
-        delete next.spell;
-        return replaceAt(caps, ci, Object.assign({}, c, { words: c.words.map((x, k) => (k === wi ? next : x)) }));
+        const texts = String(text || '').trim().split(/\s+/).filter(Boolean);
+        if (!w || !texts.length) return caps;
+        const span = Math.max(w.end - w.start, texts.length);
+        const total = texts.reduce((n, t) => n + t.length + 1, 0);
+        let acc = 0;
+        const pieces = texts.map((t) => {
+            const start = w.start + Math.round((acc / total) * span);
+            acc += t.length + 1;
+            const next = Object.assign({}, w, { text: t, start, end: Math.max(start + 1, w.start + Math.round((acc / total) * span)) });
+            delete next.fixedFrom;
+            delete next.spell;
+            return next;
+        });
+        const words = c.words.slice(0, wi).concat(pieces, c.words.slice(wi + 1));
+        const lineBreak = c.lineBreak != null && c.lineBreak > wi ? c.lineBreak + pieces.length - 1 : c.lineBreak;
+        return replaceAt(caps, ci, Object.assign({}, c, { words, lineBreak }));
     }
 
     // Keeps the word as it is and drops its marks.
@@ -310,6 +322,27 @@
         return replaceAt(caps, ci, Object.assign({}, c, { nudgeStart: 0, nudgeEnd: 0 }));
     }
 
+    // The transcript with the captions' words (kept and pruned) in place of what it had over the time
+    // the captions cover: the words as fixed in Edit, so captions built from it again (other phrase
+    // rules) keep the fixes (owner, 2026-11-28). Spelling marks and emphasis stay with the captions;
+    // a word keeps the speaker of the transcript word that started there. Words outside the
+    // captions' time (another In/Out range) stay as they were. Unchanged: the same list.
+    function toTranscript(words, caps) {
+        const fixed = [];
+        for (const c of caps) fixed.push(...c.words, ...(c.pruned || []));
+        if (!fixed.length || !Array.isArray(words)) return words;
+        fixed.sort(byStart);
+        const from = fixed[0].start;
+        const to = Math.max(...fixed.map((w) => w.end));
+        const speaker = new Map(words.map((w) => [w.start, w.speaker || null]));
+        const inside = words.filter((w) => w.start >= from && w.start < to);
+        const same = inside.length === fixed.length && inside.every((w, k) => w.text === fixed[k].text && w.start === fixed[k].start && w.end === fixed[k].end);
+        if (same) return words;
+        return words.filter((w) => w.start < from || w.start >= to)
+            .concat(fixed.map((w) => ({ text: w.text, start: w.start, end: w.end, speaker: speaker.get(w.start) || null })))
+            .sort(byStart);
+    }
+
     // Index of the caption showing at frame, or -1.
     function captionAt(caps, frame) {
         let lo = 0;
@@ -325,6 +358,6 @@
 
     return {
         split, merge, setText, paint, setLineBreak, nudge, resetNudge, captionAt, sameEmph, replaceWord, clearSpell, applySpell,
-        prunedView, prunedCount, prune, unprune, unpruneAll, regroup
+        prunedView, prunedCount, prune, unprune, unpruneAll, regroup, toTranscript
     };
 });

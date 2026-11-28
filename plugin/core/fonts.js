@@ -58,6 +58,14 @@
         return [...files];
     }
 
+    // Fusion lists a name with each character it can't keep as "?": a web-font kit converted for
+    // desktop names Arboria Bold's style "☞", which Fusion lists as "?" and Text+ only finds that
+    // way (2026-11-26, 534 of the owner's 535 font/style pairs matched as read; this was the other).
+    // No installed font showed which accented letters it keeps, so only characters past Latin-1 go.
+    function fusionText(text) {
+        return text == null ? text : String(text).replace(/[^\u0000-ÿ]/gu, '?');
+    }
+
     // Family and style of each font in an sfnt file (TrueType/OpenType, or every font of a .ttc
     // collection), from its name table, the way Fusion lists them: the typographic family and
     // subfamily (name IDs 16/17) when present, else the legacy pair (1/2). read(offset, length)
@@ -102,8 +110,8 @@
                 else text = String.fromCharCode(...bytes);
                 if (text.trim()) best[id] = { rank, text: text.trim() };
             }
-            const family = (best[16] || best[1] || {}).text;
-            const style = (best[17] || best[2] || {}).text || 'Regular';
+            const family = fusionText((best[16] || best[1] || {}).text);
+            const style = fusionText((best[17] || best[2] || {}).text) || 'Regular';
             if (family) out.push({ family, style });
         }
         return out;

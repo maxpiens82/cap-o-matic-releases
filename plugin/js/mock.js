@@ -243,11 +243,15 @@
                 return ok(null);
             }
         },
-        appInfo: () => ok({ version: tour ? '0.2.1' : '0.1.0', dataDir: '%APPDATA%\\Cap-o-matic' }),
+        // The tour stages two real releases (0.2.15 installed, 0.2.16 offered, with its notes made short).
+        appInfo: () => ok({ version: tour ? '0.2.15' : '0.1.0', dataDir: '%APPDATA%\\Cap-o-matic' }),
         // Updates as an installed copy sees them; 0.2.0 is "available".
-        updateState: () => ok({ version: tour ? '0.2.1' : '0.1.0', installed: true, pending: root.__mockPending || null, uninstalling: false }),
-        checkUpdate: () => wait(600).then(() => ok({ current: tour ? '0.2.1' : '0.1.0', latest: tour ? '0.2.2' : '0.2.0', newer: !root.__mockPending, date: '2026-10-14',
-            notes: { en: '12 built-in presets with their fonts, updates from the panel.', es: '12 presets incluidos con sus fuentes, actualizaciones desde el panel.' } })),
+        updateState: () => ok({ version: tour ? '0.2.15' : '0.1.0', installed: true, pending: root.__mockPending || null, uninstalling: false }),
+        checkUpdate: () => wait(600).then(() => ok({ current: tour ? '0.2.15' : '0.1.0', latest: tour ? '0.2.16' : '0.2.0', newer: !root.__mockPending, date: tour ? '2026-11-28' : '2026-10-14',
+            notes: tour
+                ? { en: 'Type the right word when no spelling suggestion fits, regroup captions by the phrase rules after fixing words, and a notice in the header when a new version is out.',
+                    es: 'Escribe la palabra correcta cuando ninguna sugerencia sirve, reacomoda los subtítulos por las reglas de frase después de corregir y un aviso en el encabezado cuando sale una versión nueva.' }
+                : { en: '12 built-in presets with their fonts, updates from the panel.', es: '12 presets incluidos con sus fuentes, actualizaciones desde el panel.' } })),
         installUpdate: () => wait(1200).then(() => {
             root.__mockPending = '0.2.0';
             return ok({ version: '0.2.0', fonts: ['Anton Regular'] });

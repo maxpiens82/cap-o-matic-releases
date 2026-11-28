@@ -13,7 +13,7 @@
             download: 'Download the latest version', needs: 'Free · Pro coming soon · Windows · DaVinci Resolve Studio',
             back: 'Previous step', next: 'Next step', play: 'Play', pause: 'Pause', count: 'Step {n} of {total}',
             console: [
-                '[Cap-o-matic] Cap-o-matic 0.2.1 is installed.',
+                '[Cap-o-matic] Cap-o-matic 0.2.15 is installed.',
                 '[Cap-o-matic] Fonts installed: Bebas Neue Regular, Poppins Bold.',
                 '[Cap-o-matic] Restart DaVinci Resolve, then open Workspace > Workflow Integrations > Cap-o-matic.'
             ],
@@ -21,9 +21,9 @@
                 install: ['Install', "Download the .lua file and drop it on Resolve's Console (Workspace → Console). Restart Resolve, then open Cap-o-matic from Workspace → Workflow Integrations."],
                 look: ['Pick a look', 'Start from a ready-made preset, or a base style you tune yourself: font, colors, outline, size and position.'],
                 transcribe: ['Transcribe', "One click turns your timeline's speech into words with exact timing, split into short captions."],
-                edit: ['Edit', 'Fix a word, regroup captions, or paint a word with the emphasis brush so it stands out.'],
+                edit: ['Edit', 'Spelling comes checked: fix or retype a word, prune the ones you don\'t need, regroup captions, or paint a word with the emphasis brush so it stands out.'],
                 deliver: ['Deliver', 'The captions land on a new track as animated titles, word by word, ready to render. Changed your mind? Restyle them in place.'],
-                updates: ['Stay up to date', 'New versions install from Settings → Updates. Your presets and settings stay.']
+                updates: ['Stay up to date', 'The panel tells you when a new version is out, and it installs from Settings → Updates. Your presets and settings stay.']
             }
         },
         // Spanish here is marketing copy: Rioplatense, with vos (docs/BRAND.md section 11). The console
@@ -37,7 +37,7 @@
             download: 'Descargá la última versión', needs: 'Gratis · Pro muy pronto · Windows · DaVinci Resolve Studio',
             back: 'Paso anterior', next: 'Paso siguiente', play: 'Reproducir', pause: 'Pausa', count: 'Paso {n} de {total}',
             console: [
-                '[Cap-o-matic] Cap-o-matic 0.2.1 está instalado.',
+                '[Cap-o-matic] Cap-o-matic 0.2.15 está instalado.',
                 '[Cap-o-matic] Fuentes instaladas: Bebas Neue Regular, Poppins Bold.',
                 '[Cap-o-matic] Reinicia DaVinci Resolve y abre Workspace > Workflow Integrations > Cap-o-matic.'
             ],
@@ -45,9 +45,9 @@
                 install: ['Instalá', 'Descargá el archivo .lua y soltalo en la consola de Resolve (Workspace → Console). Reiniciá Resolve y abrí Cap-o-matic desde Workspace → Workflow Integrations.'],
                 look: ['Elegí un estilo', 'Arrancá de un preset armado o de un estilo base que ajustás vos: fuente, colores, contorno, tamaño y posición.'],
                 transcribe: ['Transcribí', 'Un clic convierte lo que se dice en tu timeline en palabras con su tiempo exacto, divididas en subtítulos cortos.'],
-                edit: ['Editá', 'Corregí una palabra, reagrupá subtítulos o pintá una palabra con el pincel de énfasis para que resalte.'],
+                edit: ['Editá', 'La ortografía ya viene revisada: corregí o reescribí una palabra, podá las que sobran, reagrupá subtítulos o pintá una palabra con el pincel de énfasis para que resalte.'],
                 deliver: ['Entregá', 'Los subtítulos caen en una pista nueva como títulos animados, palabra por palabra, listos para renderizar. ¿Cambiaste de idea? Cambiales el estilo ahí mismo.'],
-                updates: ['Mantenete al día', 'Las versiones nuevas se instalan desde Ajustes → Actualizaciones. Tus presets y ajustes quedan como están.']
+                updates: ['Mantenete al día', 'El panel te avisa cuando sale una versión nueva, y se instala desde Ajustes → Actualizaciones. Tus presets y ajustes quedan como están.']
             }
         }
     };
@@ -178,11 +178,12 @@
 
     function loadPanel() {
         for (const k of Object.keys(localStorage)) if (k.startsWith('cap-tour:')) localStorage.removeItem(k);
-        // A clean start: Pop with three-word lines, no viewer guide in the preview.
+        // A clean start: Pop with three-word lines, no viewer guide in the preview, and no update
+        // check on opening (on by default since 0.2.16): the tour shows updates in its own step.
         localStorage.setItem('cap-tour:settings', JSON.stringify({
             language: lang, style: { source: 'pack', id: 'pop' },
             rules: { maxWords: 3, maxChars: 18, lines: 1, sentenceBreak: true, pauseBreak: true, pauseSeconds: 0.4 },
-            look: { guide: false }
+            look: { guide: false }, updateCheck: false
         }));
         return new Promise((resolve) => {
             iframe.onload = resolve;
@@ -431,9 +432,10 @@
         {
             id: 'updates',
             async run() {
-                await press(nav(4));
+                // Settings is the rail's last button (Presets sits before it since 0.2.5).
+                await press(() => [...pd().querySelectorAll('.rail .nav')].pop());
                 await press(buttonWithText(pt('up.check')));
-                await waitFor(() => buttonWithText(pt('up.install', { v: '0.2.2' }))());
+                await waitFor(() => buttonWithText(pt('up.install', { v: '0.2.16' }))());
                 await wait(1600);
                 $('end').classList.add('show');
                 await moveTo(REST, 600);

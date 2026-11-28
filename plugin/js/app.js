@@ -308,6 +308,20 @@
         pin.setAttribute('aria-label', pin.title);
         pin.setAttribute('aria-pressed', String(onTop));
         if (!pin.firstChild) pin.appendChild(icon('pin', 16));
+        // A newer version (found when the panel opened, or by Check for updates), until it's installed.
+        const u = S.upd || {};
+        const newer = u.state === 'checked' && u.info && u.info.newer ? u.info.latest : null;
+        const upd = $('updBtn');
+        upd.hidden = !newer;
+        if (newer) {
+            upd.textContent = t('up.pill', { v: newer });
+            upd.title = t('up.pillTitle', { v: newer });
+            upd.onclick = () => {
+                go('settings');
+                const block = $('updAvail');
+                if (block) block.scrollIntoView({ block: 'center' });
+            };
+        }
     }
 
     function renderRail() {
@@ -910,6 +924,7 @@
         const out = Core.edit.applySpell(S.data.captions, res);
         if (!out.fixed && !out.unsure) return;
         S.data.captions = out.caps;
+        syncTranscript();
         S.spellIdx = 0;
         saveData();
         if (S.screen === 'edit') renderScreen();
@@ -954,16 +969,34 @@
             S.spellIdx = (S.spellIdx + d + items.length) % items.length;
             renderScreen();
         };
+        // None of the choices is right: type it. Two words for one split its time (edit.replaceWord).
+        const typed = h('input', {
+            class: 'field sp-typed', type: 'text', placeholder: t('sp.typeHint'), 'aria-label': t('sp.type'),
+            onkeydown: (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    useTyped();
+                }
+            }
+        });
+        const useTyped = () => {
+            if (typed.value.trim()) commit(E.replaceWord(S.data.captions, it.ci, it.wi, typed.value));
+        };
+        const typeRow = h('div', { class: 'sp-type' },
+            h('span', { class: 'lbl' }, t('sp.type')), typed,
+            h('button', { type: 'button', class: 'btn small', onclick: useTyped }, t('sp.use')));
         const body = it.w.spell
             ? [h('p', { class: 'sp-q' }, t('sp.unsure', { word: it.w.text })),
                 h('div', { class: 'sp-choices' },
                     it.w.spell.map((c) => h('button', { type: 'button', class: 'btn small primary', onclick: () => commit(E.replaceWord(S.data.captions, it.ci, it.wi, c)) }, c)),
                     h('button', { type: 'button', class: 'btn small', onclick: () => commit(E.clearSpell(S.data.captions, it.ci, it.wi)) }, t('sp.keep', { word: it.w.text })),
-                    h('button', { type: 'button', class: 'linklike', onclick: () => addToDictionary(it.w.text) }, t('sp.add')))]
+                    h('button', { type: 'button', class: 'linklike', onclick: () => addToDictionary(it.w.text) }, t('sp.add'))),
+                typeRow]
             : [h('p', { class: 'sp-q' }, t('sp.fixed', { from: it.w.fixedFrom, to: it.w.text })),
                 h('div', { class: 'sp-choices' },
                     h('button', { type: 'button', class: 'btn small', onclick: () => commit(E.clearSpell(S.data.captions, it.ci, it.wi)) }, t('sp.ok')),
-                    h('button', { type: 'button', class: 'btn small', onclick: () => commit(E.replaceWord(S.data.captions, it.ci, it.wi, it.w.fixedFrom)) }, t('sp.revert', { from: it.w.fixedFrom })))];
+                    h('button', { type: 'button', class: 'btn small', onclick: () => commit(E.replaceWord(S.data.captions, it.ci, it.wi, it.w.fixedFrom)) }, t('sp.revert', { from: it.w.fixedFrom }))),
+                typeRow];
         // Bring the word into view once drawn.
         setTimeout(() => {
             const row = document.querySelector(`#capList .cap[data-i="${it.ci}"]`);
@@ -997,8 +1030,18 @@
         applyCaptions(next, quiet);
     }
 
+    // Words fixed in Edit (spelling, retyped, split) go back into the transcript, so captions built
+    // again from it, with other phrase rules, keep them (edit.toTranscript).
+    function syncTranscript() {
+        const tr = S.data.transcript;
+        if (!tr || !Array.isArray(tr.words)) return;
+        const words = Core.edit.toTranscript(tr.words, S.data.captions);
+        if (words !== tr.words) S.data.transcript = Object.assign({}, tr, { words, fixed: true });
+    }
+
     function applyCaptions(next, quiet) {
         S.data.captions = next;
+        syncTranscript();
         S.data.edited = true;
         if (S.sel >= next.length) S.sel = next.length - 1;
         saveDataSoon();
@@ -1169,7 +1212,13 @@
         const mode = S.editMode;
         let panel;
         if (mode === 'emph') panel = brushPanel();
-        else if (mode === 'spell') panel = h('p', { class: 'hint' }, t('ed.hintSpell'));
+        else if (mode === 'spell') {
+            // Words fixed, split or joined change the counts: the phrase rules group them again.
+            panel = h('div', { class: 'brush' },
+                h('p', { class: 'hint', style: 'margin:0' }, t('ed.hintSpell')),
+                h('div', { class: 'prune-actions' },
+                    h('button', { type: 'button', class: 'btn small primary', title: t('ed.regroupAllTitle'), onclick: () => commit(Core.edit.regroup(S.data.captions, S.settings.rules, fps())) }, t('ed.regroupAll'))));
+        }
         else if (mode === 'break') panel = h('p', { class: 'hint' }, t('ed.hintBreakMode'));
         else if (mode === 'prune') panel = prunePanel(caps);
         else {
@@ -1391,6 +1440,19 @@
         const tr = S.data.track;
         if (!Number.isInteger(tr)) return 'new';
         return S.tracks && !S.tracks.some((x) => x.index === tr) ? 'new' : tr;
+    }
+
+    // A test made a new track: Deliver's track becomes it right away. The track list from Resolve
+    // (loadTracks) can take seconds on a long timeline, and until it shows the new track
+    // deliverTrack() answers "new" again. Live in viewer retries every 0.4 s while an update is
+    // out, so the retry went out first, made another track, and so on (2026-11-28: V3 to V13).
+    function useMadeTrack(index) {
+        S.data.track = index;
+        saveData();
+        if (Array.isArray(S.tracks) && !S.tracks.some((x) => x.index === index)) {
+            S.tracks = S.tracks.concat({ index, name: 'Cap-o-matic', ours: 0, others: 0 }).sort((a, b) => a.index - b.index);
+        }
+        loadTracks();
     }
 
     function setDeliverTrack(tr) {
@@ -2918,12 +2980,9 @@
         renderFooter();
         try {
             const res = await call('deliverTest', { caption: whipCaption(withDrift([S.data.captions[i]])[0], i), clip: finalClips()[i], look: compLook(), styleRef: S.settings.style, track });
-            if (track === 'new') {
-                S.data.track = res.track;
-                saveData();
-            }
+            if (track === 'new') useMadeTrack(res.track);
+            else loadTracks();
             flash(t('de.tested', { n: i + 1, track: res.track }));
-            loadTracks();
         } catch (e) {
             flash(e.message, true);
         } finally {
@@ -2979,10 +3038,8 @@
             liveKey = key;
             if (track === 'new') {
                 // Later updates go to the track it made, not a new one each time.
-                S.data.track = res.track;
-                saveData();
+                useMadeTrack(res.track);
                 liveKey = null;
-                loadTracks();
             }
         } catch (e) {
             // Something Resolve won't do (clips at the playhead, a template gone): stop, and say why.
@@ -3199,6 +3256,7 @@
         } catch (e) {
             S.upd = { state: 'checked', error: quiet ? null : e.message };
         }
+        renderHeader();
         if (S.screen === 'settings') renderScreen();
     }
 
@@ -3211,6 +3269,7 @@
         } catch (e) {
             S.upd = Object.assign({}, S.upd, { state: 'checked', error: e.message });
         }
+        renderHeader();
         renderScreen();
     }
 
@@ -3234,7 +3293,7 @@
         if (u.state === 'checked' && u.info) {
             if (u.info.newer) {
                 const notes = u.info.notes ? u.info.notes[lang] || u.info.notes.en : '';
-                out.push(h('div', { class: 'pad stack' },
+                out.push(h('div', { class: 'pad stack', id: 'updAvail' },
                     h('strong', null, t('up.available', { v: u.info.latest })),
                     notes ? h('p', { class: 'hint', style: 'margin:0' }, notes) : null,
                     h('button', { type: 'button', class: 'btn primary block', disabled: !installed, onclick: installUpdate }, t('up.install', { v: u.info.latest }))));
@@ -3245,7 +3304,7 @@
         out.push(h('div', { class: 'pad' }, busy
             ? h('div', { class: 'busy' }, h('span', { class: 'spinner' }), h('span', null, u.state === 'installing' ? t('up.installing') : t('up.check')))
             : h('button', { type: 'button', class: 'btn', onclick: () => checkForUpdate(false) }, t('up.check'))));
-        out.push(checkbox('updAuto', t('up.auto'), S.settings.updateCheck === true, (v) => {
+        out.push(checkbox('updAuto', t('up.auto'), S.settings.updateCheck !== false, (v) => {
             S.settings.updateCheck = v;
             saveSettings();
         }));
@@ -3331,7 +3390,8 @@
             // Optional.
         }
         // Off unless asked: the panel otherwise never goes online.
-        if (S.settings.updateCheck === true && api.checkUpdate) setTimeout(() => checkForUpdate(true), 3000);
+        // On unless turned off in Settings → Updates (owner, 2026-11-28: it was opt-in until 0.2.16).
+        if (S.settings.updateCheck !== false && api.checkUpdate) setTimeout(() => checkForUpdate(true), 3000);
         // If Windows still draws its own title bar (overlay unsupported), don't repeat logo and name.
         const wco = navigator.windowControlsOverlay;
         if (!api.isMock && !(wco && wco.visible)) document.body.classList.add('native-titlebar');
